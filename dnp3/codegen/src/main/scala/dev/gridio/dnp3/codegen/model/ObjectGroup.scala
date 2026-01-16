@@ -38,6 +38,8 @@ object ObjectGroup {
     Group102,
     Group110,
     Group111,
+    Group112,
+    Group113,
   )
 
 }

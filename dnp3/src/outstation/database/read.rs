@@ -639,6 +639,10 @@ impl ReadHeader {
             AllObjectsVariation::Group110Var0 => Some(StaticReadHeader::OctetString(None).into()),
             // group 111
             AllObjectsVariation::Group111Var0 => Some(EventReadHeader::OctetString(None).into()),
+            // group 112 - Virtual Terminal Output Block (not stored in database)
+            AllObjectsVariation::Group112Var0 => None,
+            // group 113 - Virtual Terminal Event Data (not stored in database)
+            AllObjectsVariation::Group113Var0 => None,
         }
     }
 
@@ -920,6 +924,9 @@ impl ReadHeader {
             CountVariation::Group60Var4 => Some(EventReadHeader::Class3(Some(count)).into()),
             CountVariation::Group111Var0 => Some(EventReadHeader::OctetString(Some(count)).into()),
             CountVariation::Group111VarX(_) => None,
+            // group 113 - Virtual Terminal Event Data (not stored in database)
+            CountVariation::Group113Var0 => None,
+            CountVariation::Group113VarX(_) => None,
         }
     }
 
@@ -1211,8 +1218,10 @@ impl ReadHeader {
             RangedVariation::Group110Var0 => {
                 Some(StaticReadHeader::OctetString(Some(range)).into())
             }
-            // group 111
             RangedVariation::Group110VarX(_, _) => None,
+            // group 112 - Virtual Terminal Output Block (not stored in database)
+            RangedVariation::Group112Var0 => None,
+            RangedVariation::Group112VarX(_, _) => None,
         }
     }
 }

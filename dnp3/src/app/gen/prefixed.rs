@@ -145,6 +145,8 @@ pub(crate) enum PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt:
     Group43Var8(CountSequence<'a, Prefix<I, Group43Var8>>),
     /// Octet String Event - Sized by variation
     Group111VarX(u8, PrefixedBytesSequence<'a, I>),
+    /// Virtual Terminal Event Data - Sized by variation
+    Group113VarX(u8, PrefixedBytesSequence<'a, I>),
 }
 
 impl<'a, I> PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt::Display {
@@ -210,10 +212,11 @@ impl<'a, I> PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt::Dis
             Variation::Group43Var7 => Ok(PrefixedVariation::Group43Var7(CountSequence::parse(count, cursor)?)),
             Variation::Group43Var8 => Ok(PrefixedVariation::Group43Var8(CountSequence::parse(count, cursor)?)),
             Variation::Group111(x) => Ok(PrefixedVariation::Group111VarX(x, PrefixedBytesSequence::parse(options, x, count, cursor)?)),
+            Variation::Group113(x) => Ok(PrefixedVariation::Group113VarX(x, PrefixedBytesSequence::parse(options, x, count, cursor)?)),
             _ => Err(ObjectParseError::InvalidQualifierForVariation(v, I::COUNT_AND_PREFIX_QUALIFIER)),
         }
     }
-    
+
     pub(crate) fn format_objects(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             PrefixedVariation::Group0(attr) => attr.format(f),
@@ -276,9 +279,10 @@ impl<'a, I> PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt::Dis
             PrefixedVariation::Group43Var7(seq) => format_prefixed_items(f, seq.iter()),
             PrefixedVariation::Group43Var8(seq) => format_prefixed_items(f, seq.iter()),
             PrefixedVariation::Group111VarX(_, seq) => format_indexed_items(f, seq.iter().map(|(x, i)| (Bytes::new(x), i))),
+            PrefixedVariation::Group113VarX(_, seq) => format_indexed_items(f, seq.iter().map(|(x, i)| (Bytes::new(x), i))),
         }
     }
-    
+
     pub(crate) fn extract_measurements_to(&self, cto: Option<Time>, handler: &mut dyn ReadHandler) -> bool {
         match self {
             PrefixedVariation::Group0(attr) => {
@@ -667,9 +671,16 @@ impl<'a, I> PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt::Dis
                 );
                 true
             }
+            PrefixedVariation::Group113VarX(_, seq) => {
+                handler.handle_virtual_terminal_event(
+                    self.get_header_info(),
+                    &mut seq.iter().map(|x| (x.0, x.1.widen_to_u16()))
+                );
+                true
+            }
         }
     }
-    
+
     pub(crate) fn get_header_info(&self) -> HeaderInfo {
         match self {
             PrefixedVariation::Group0(attr) => HeaderInfo::new(Variation::Group0(attr.variation), I::COUNT_AND_PREFIX_QUALIFIER, false, false),
@@ -732,6 +743,7 @@ impl<'a, I> PrefixedVariation<'a, I> where I : FixedSize + Index + std::fmt::Dis
             PrefixedVariation::Group43Var7(_) => HeaderInfo::new(Variation::Group43Var7, I::COUNT_AND_PREFIX_QUALIFIER, true, false),
             PrefixedVariation::Group43Var8(_) => HeaderInfo::new(Variation::Group43Var8, I::COUNT_AND_PREFIX_QUALIFIER, true, false),
             PrefixedVariation::Group111VarX(x, _) =>  HeaderInfo::new(Variation::Group111(*x), I::COUNT_AND_PREFIX_QUALIFIER, true, false),
+            PrefixedVariation::Group113VarX(x, _) =>  HeaderInfo::new(Variation::Group113(*x), I::COUNT_AND_PREFIX_QUALIFIER, true, false),
         }
     }
 }
