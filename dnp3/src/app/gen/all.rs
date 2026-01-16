@@ -129,6 +129,8 @@ pub(crate) enum AllObjectsVariation {
     Group102Var1,
     Group110Var0,
     Group111Var0,
+    Group112Var0,
+    Group113Var0,
 }
 
 impl AllObjectsVariation {
@@ -249,6 +251,8 @@ impl AllObjectsVariation {
             Variation::Group102Var1 => Some(AllObjectsVariation::Group102Var1),
             Variation::Group110(0) => Some(AllObjectsVariation::Group110Var0),
             Variation::Group111(0) => Some(AllObjectsVariation::Group111Var0),
+            Variation::Group112(0) => Some(AllObjectsVariation::Group112Var0),
+            Variation::Group113(0) => Some(AllObjectsVariation::Group113Var0),
             _ => None,
         }
     }

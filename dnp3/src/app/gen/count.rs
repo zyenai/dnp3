@@ -161,6 +161,9 @@ pub(crate) enum CountVariation<'a> {
     /// Octet String Event - Sized by variation
     Group111Var0,
     Group111VarX(u8),
+    /// Virtual Terminal Event Data - Sized by variation
+    Group113Var0,
+    Group113VarX(u8),
 }
 
 impl<'a> CountVariation<'a> {
@@ -237,10 +240,12 @@ impl<'a> CountVariation<'a> {
             Variation::Group60Var4 => Ok(CountVariation::Group60Var4),
             Variation::Group111(0) => Ok(CountVariation::Group111Var0),
             Variation::Group111(x) => Ok(CountVariation::Group111VarX(x)),
+            Variation::Group113(0) => Ok(CountVariation::Group113Var0),
+            Variation::Group113(x) => Ok(CountVariation::Group113VarX(x)),
             _ => Err(ObjectParseError::InvalidQualifierForVariation(v, qualifier)),
         }
     }
-    
+
     pub(crate) fn format_objects(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             CountVariation::Group2Var0 => Ok(()),
@@ -314,6 +319,8 @@ impl<'a> CountVariation<'a> {
             CountVariation::Group60Var4 => Ok(()),
             CountVariation::Group111Var0 => Ok(()),
             CountVariation::Group111VarX(_) => Ok(()),
+            CountVariation::Group113Var0 => Ok(()),
+            CountVariation::Group113VarX(_) => Ok(()),
         }
     }
 }

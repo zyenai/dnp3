@@ -126,6 +126,28 @@ pub trait ReadHandler: Send + Sync {
     ) {
     }
 
+    /// Process an object header of virtual terminal output block values (Group 112)
+    ///
+    /// Virtual Terminal Output Block objects convey binary octet data streams
+    /// going TO an outstation device. The point index specifies the virtual port number.
+    fn handle_virtual_terminal_output<'a>(
+        &mut self,
+        info: HeaderInfo,
+        iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
+    ) {
+    }
+
+    /// Process an object header of virtual terminal event data values (Group 113)
+    ///
+    /// Virtual Terminal Event Data objects convey binary octet data streams
+    /// coming FROM an outstation device. The point index specifies the virtual port number.
+    fn handle_virtual_terminal_event<'a>(
+        &mut self,
+        info: HeaderInfo,
+        iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
+    ) {
+    }
+
     /// Process a device attribute
     fn handle_device_attribute(&mut self, info: HeaderInfo, attr: AnyAttribute) {}
 

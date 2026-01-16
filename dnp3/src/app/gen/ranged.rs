@@ -128,6 +128,9 @@ pub(crate) enum RangedVariation<'a> {
     /// Octet String - Sized by variation
     Group110Var0,
     Group110VarX(u8, RangedBytesSequence<'a>),
+    /// Virtual Terminal Output Block - Sized by variation
+    Group112Var0,
+    Group112VarX(u8, RangedBytesSequence<'a>),
 }
 
 impl<'a> RangedVariation<'a> {
@@ -186,10 +189,13 @@ impl<'a> RangedVariation<'a> {
             Variation::Group110(x) => {
                 Ok(RangedVariation::Group110VarX(x, RangedBytesSequence::parse(options, x, range.get_start(), range.get_count(), cursor)?))
             },
+            Variation::Group112(x) => {
+                Ok(RangedVariation::Group112VarX(x, RangedBytesSequence::parse(options, x, range.get_start(), range.get_count(), cursor)?))
+            },
             _ => Err(ObjectParseError::InvalidQualifierForVariation(v, qualifier)),
         }
     }
-    
+
     pub(crate) fn parse_read(v: Variation, qualifier: QualifierCode) -> Result<RangedVariation<'a>, ObjectParseError> {
         match v {
             Variation::Group0Var254 => Ok(RangedVariation::Group0Var254),
@@ -243,10 +249,11 @@ impl<'a> RangedVariation<'a> {
             Variation::Group102Var0 => Ok(RangedVariation::Group102Var0),
             Variation::Group102Var1 => Ok(RangedVariation::Group102Var1(RangedSequence::empty())),
             Variation::Group110(0) => Ok(RangedVariation::Group110Var0),
+            Variation::Group112(0) => Ok(RangedVariation::Group112Var0),
             _ => Err(ObjectParseError::InvalidQualifierForVariation(v, qualifier)),
         }
     }
-    
+
     pub(crate) fn format_objects(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             RangedVariation::Group0Var254 => Ok(()),
@@ -301,9 +308,11 @@ impl<'a> RangedVariation<'a> {
             RangedVariation::Group102Var1(seq) => format_indexed_items(f, seq.iter()),
             RangedVariation::Group110Var0 => Ok(()),
             RangedVariation::Group110VarX(_, seq) => format_indexed_items(f, seq.iter().map(|(x, i)| (Bytes::new(x), i))),
+            RangedVariation::Group112Var0 => Ok(()),
+            RangedVariation::Group112VarX(_, seq) => format_indexed_items(f, seq.iter().map(|(x, i)| (Bytes::new(x), i))),
         }
     }
-    
+
     pub(crate) fn extract_measurements_to(&self, var: Variation, qualifier: QualifierCode, handler: &mut dyn ReadHandler) -> bool {
         match self {
             RangedVariation::Group0Var254 => {
@@ -614,6 +623,16 @@ impl<'a> RangedVariation<'a> {
             }
             RangedVariation::Group110VarX(_,seq) => {
                 handler.handle_octet_string(
+                    HeaderInfo::new(var, qualifier, false, false),
+                    &mut seq.iter()
+                );
+                true
+            }
+            RangedVariation::Group112Var0 => {
+                false
+            }
+            RangedVariation::Group112VarX(_,seq) => {
+                handler.handle_virtual_terminal_output(
                     HeaderInfo::new(var, qualifier, false, false),
                     &mut seq.iter()
                 );
