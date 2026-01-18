@@ -1,0 +1,17 @@
+[package]
+name = "example-virtual-terminal"
+version = "0.1.0"
+edition = "2021"
+authors = ["Step Function I/O LLC <info@stepfunc.io>"]
+description = "DNP3 Virtual Terminal (Groups 112/113) example applications"
+license-file = "../../LICENSE.txt"
+
+[dependencies]
+dnp3 = { path = "../../dnp3" }
+tokio = { version = "1", features = ["net", "sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[[bin]]
+name = "vt_ieee_session"
+path = "src/main.rs"
