@@ -121,9 +121,9 @@ async fn run_ieee_simulation(vt_state: SharedVtState) -> Result<(), Box<dyn std:
 
     // Verify all expected g112 writes were received
     let expected_g112 = vec![
-        (VT_PORT_INDEX, vec![0x0D]),              // wakeup
-        (VT_PORT_INDEX, b"CLEAR\r".to_vec()),     // CLEAR
-        (VT_PORT_INDEX, b"LOGOFF\r".to_vec()),    // LOGOFF
+        (VT_PORT_INDEX, vec![0x0D]),           // wakeup
+        (VT_PORT_INDEX, b"CLEAR\r".to_vec()),  // CLEAR
+        (VT_PORT_INDEX, b"LOGOFF\r".to_vec()), // LOGOFF
     ];
 
     if state.received_g112 == expected_g112 {

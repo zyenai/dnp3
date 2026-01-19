@@ -15,3 +15,7 @@ tracing-subscriber = "0.3"
 [[bin]]
 name = "vt_ieee_session"
 path = "src/main.rs"
+
+[[bin]]
+name = "vt_binary_test"
+path = "src/poc2_binary_transfer.rs"
