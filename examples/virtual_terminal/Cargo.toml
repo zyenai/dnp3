@@ -19,3 +19,11 @@ path = "src/main.rs"
 [[bin]]
 name = "vt_binary_test"
 path = "src/poc2_binary_transfer.rs"
+
+[[bin]]
+name = "vt_tunnel_client"
+path = "src/tunnel_client_main.rs"
+
+[[bin]]
+name = "vt_tunnel_server"
+path = "src/tunnel_server_main.rs"
