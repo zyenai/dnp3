@@ -22,6 +22,7 @@
 //! - T0869: Standard Application Layer Protocol (ICS)
 
 mod common;
+mod poc3_real_dnp3;
 mod poc3_ssh_tunnel;
 
 use std::time::Duration;
@@ -42,6 +43,8 @@ struct Args {
     vt_port: u16,
     /// Polling interval in milliseconds
     poll_interval: u64,
+    /// Run real DNP3 demo (visible in Wireshark)
+    real_dnp3: bool,
 }
 
 impl Default for Args {
@@ -53,6 +56,7 @@ impl Default for Args {
             outstation_addr: 10,
             vt_port: 0,
             poll_interval: 50,
+            real_dnp3: false,
         }
     }
 }
@@ -93,6 +97,9 @@ fn parse_args() -> Args {
                     args.poll_interval = val.parse().unwrap_or(50);
                 }
             }
+            "--real-dnp3" => {
+                args.real_dnp3 = true;
+            }
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -123,6 +130,7 @@ OPTIONS:
     --outstation-addr <ADDR>      DNP3 outstation address [default: 10]
     --vt-port <PORT>              Virtual terminal port index [default: 0]
     --poll-interval <MS>          VT polling interval in milliseconds [default: 50]
+    --real-dnp3                   Run real DNP3 demo (generates Wireshark-visible traffic)
     -h, --help                    Print help information
 
 EXAMPLE:
@@ -166,6 +174,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("----------------------------------------------------------------");
     println!();
+
+    if args.real_dnp3 {
+        let config = poc3_real_dnp3::RealDnp3Config {
+            dnp3_addr: args.dnp3_endpoint.parse().unwrap_or_else(|_| "127.0.0.1:20000".parse().unwrap()),
+            master_addr: args.master_addr,
+            outstation_addr: args.outstation_addr,
+        };
+        return poc3_real_dnp3::run_demo_master(config).await.map_err(|e| -> Box<dyn std::error::Error> { e });
+    }
 
     let config = TunnelClientConfig {
         listen_addr: args.listen,

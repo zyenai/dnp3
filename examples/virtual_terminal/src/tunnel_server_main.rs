@@ -20,6 +20,7 @@
 //! - T0886: Remote Services
 
 mod common;
+mod poc3_real_dnp3;
 mod poc3_ssh_tunnel;
 
 use std::sync::Arc;
@@ -42,6 +43,8 @@ struct Args {
     vt_port: u16,
     /// Run integration test instead of server
     test_mode: bool,
+    /// Run real DNP3 demo (visible in Wireshark)
+    real_dnp3: bool,
 }
 
 impl Default for Args {
@@ -53,6 +56,7 @@ impl Default for Args {
             master_addr: 1,
             vt_port: 0,
             test_mode: false,
+            real_dnp3: false,
         }
     }
 }
@@ -91,6 +95,9 @@ fn parse_args() -> Args {
             "--test" => {
                 args.test_mode = true;
             }
+            "--real-dnp3" => {
+                args.real_dnp3 = true;
+            }
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -121,6 +128,7 @@ OPTIONS:
     --master-addr <ADDR>          DNP3 master address [default: 1]
     --vt-port <PORT>              Virtual terminal port index [default: 0]
     --test                        Run integration test mode
+    --real-dnp3                   Run real DNP3 demo (generates Wireshark-visible traffic)
     -h, --help                    Print help information
 
 EXAMPLE:
@@ -164,6 +172,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.test_mode {
         return run_integration_test().await;
+    }
+
+    if args.real_dnp3 {
+        let config = poc3_real_dnp3::RealDnp3Config {
+            dnp3_addr: args.dnp3_listen.parse().unwrap_or_else(|_| "127.0.0.1:20000".parse().unwrap()),
+            master_addr: args.master_addr,
+            outstation_addr: args.outstation_addr,
+        };
+        return poc3_real_dnp3::run_demo_outstation(config).await.map_err(|e| -> Box<dyn std::error::Error> { e });
     }
 
     let config = TunnelServerConfig {
