@@ -226,6 +226,28 @@ pub trait OutstationApplication: Sync + Send + 'static {
     fn end_confirm(&mut self, state: BufferState) -> MaybeAsync<()> {
         MaybeAsync::ready(())
     }
+
+    /// Controls outstation support for Virtual Terminal output (Group 112) writes
+    ///
+    /// Returning false indicates that VT writes should not be processed and requests to
+    /// do so should be rejected with IIN2.NO_FUNC_CODE_SUPPORT
+    ///
+    /// Returning true will allow the request to process the VT data with calls to
+    /// [`Self::handle_virtual_terminal_write`]
+    fn support_virtual_terminal_writes(&self) -> bool {
+        false
+    }
+
+    /// Called when a Group 112 (Virtual Terminal Output) write is received
+    ///
+    /// * `port` - The virtual terminal port index (0-65535)
+    /// * `data` - The raw VT data bytes
+    ///
+    /// This callback is invoked for each VT object in the write request.
+    /// The application can use this to forward the data to a local service
+    /// (e.g., SSH server) for protocol tunneling.
+    #[allow(unused_variables)]
+    fn handle_virtual_terminal_write(&mut self, port: u16, data: &[u8]) {}
 }
 
 /// enumeration describing how the outstation processed a broadcast request

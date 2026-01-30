@@ -1397,6 +1397,13 @@ impl OutstationSession {
             HeaderDetails::TwoByteCountAndPrefix(_, PrefixedVariation::Group34Var3(seq)) => {
                 self.handle_write_analog_deadbands(seq, db).await
             }
+            // Virtual Terminal Output (Group 112)
+            HeaderDetails::OneByteStartStop(_, _, RangedVariation::Group112VarX(_, seq)) => {
+                self.handle_write_virtual_terminal(seq)
+            }
+            HeaderDetails::TwoByteStartStop(_, _, RangedVariation::Group112VarX(_, seq)) => {
+                self.handle_write_virtual_terminal(seq)
+            }
             _ => {
                 tracing::warn!(
                     "WRITE not supported with qualifier: {} and variation: {}",
@@ -1406,6 +1413,27 @@ impl OutstationSession {
                 Iin2::NO_FUNC_CODE_SUPPORT
             }
         }
+    }
+
+    fn handle_write_virtual_terminal(
+        &mut self,
+        seq: crate::app::parse::bytes::RangedBytesSequence<'_>,
+    ) -> Iin2 {
+        if !self.application.support_virtual_terminal_writes() {
+            tracing::warn!("Virtual Terminal writes not supported by application");
+            return Iin2::NO_FUNC_CODE_SUPPORT;
+        }
+
+        for (data, index) in seq.iter() {
+            tracing::debug!(
+                "Virtual Terminal write: port={}, len={}",
+                index,
+                data.len()
+            );
+            self.application.handle_virtual_terminal_write(index, data);
+        }
+
+        Iin2::default()
     }
 
     fn handle_write_at_last_recorded_time(&mut self, seq: CountSequence<Group50Var3>) -> Iin2 {

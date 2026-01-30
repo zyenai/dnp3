@@ -23,6 +23,7 @@ use crate::master::tasks::file::get_info::GetFileInfoTask;
 use crate::master::tasks::file::open::OpenFileTask;
 use crate::master::tasks::file::read::FileReadTask;
 use crate::master::tasks::file::write_block::WriteBlockTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::transport::FragmentAddr;
 
 pub(crate) mod auto;
@@ -34,6 +35,7 @@ pub(crate) mod file;
 pub(crate) mod read;
 pub(crate) mod restart;
 pub(crate) mod time;
+pub(crate) mod virtual_terminal;
 
 /// Queued task requiring I/O
 pub(crate) struct AssociationTask {
@@ -170,6 +172,8 @@ pub(crate) enum NonReadTask {
     WriteFileBlock(WriteBlockTask),
     /// get info about a file
     GetFileInfo(GetFileInfoTask),
+    /// write virtual terminal data
+    VirtualTerminal(WriteVirtualTerminalTask),
 }
 
 impl RequestWriter for ReadTask {
@@ -207,6 +211,7 @@ impl RequestWriter for NonReadTask {
             NonReadTask::CloseFile(t) => t.write(writer)?,
             NonReadTask::WriteFileBlock(t) => t.write(writer)?,
             NonReadTask::AuthFile(t) => t.write(writer)?,
+            NonReadTask::VirtualTerminal(t) => t.write(writer)?,
         }
         Ok(())
     }
@@ -309,6 +314,7 @@ impl NonReadTask {
             Self::CloseFile(_) => Some(self),
             Self::WriteFileBlock(_) => Some(self),
             Self::AuthFile(_) => Some(self),
+            Self::VirtualTerminal(_) => Some(self),
         }
     }
 
@@ -326,6 +332,7 @@ impl NonReadTask {
             Self::CloseFile(task) => task.function(),
             Self::WriteFileBlock(task) => task.function(),
             Self::AuthFile(task) => task.function(),
+            Self::VirtualTerminal(task) => task.function(),
         }
     }
 
@@ -343,6 +350,7 @@ impl NonReadTask {
             Self::CloseFile(task) => task.on_task_error(err),
             Self::WriteFileBlock(task) => task.on_task_error(err),
             Self::AuthFile(task) => task.on_task_error(err),
+            Self::VirtualTerminal(task) => task.on_task_error(err),
         }
     }
 
@@ -364,6 +372,7 @@ impl NonReadTask {
             Self::CloseFile(task) => task.handle(response),
             Self::WriteFileBlock(task) => task.handle(response),
             Self::AuthFile(task) => task.handle(response),
+            Self::VirtualTerminal(task) => task.handle(response),
         }
     }
 
@@ -385,6 +394,7 @@ impl NonReadTask {
             Self::OpenFile(_) => TaskType::FileOpen,
             Self::CloseFile(_) => TaskType::FileClose,
             Self::WriteFileBlock(_) => TaskType::FileWriteBlock,
+            Self::VirtualTerminal(_) => TaskType::WriteVirtualTerminal,
         }
     }
 }

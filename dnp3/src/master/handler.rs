@@ -13,6 +13,7 @@ use crate::master::promise::Promise;
 use crate::master::request::{CommandHeaders, CommandMode, ReadRequest, TimeSyncProcedure};
 use crate::master::tasks::command::CommandTask;
 use crate::master::tasks::deadbands::WriteDeadBandsTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::empty_response::EmptyResponseTask;
 use crate::master::tasks::file::authenticate::AuthFileTask;
 use crate::master::tasks::file::close::CloseFileTask;
@@ -27,7 +28,8 @@ use crate::master::tasks::time::TimeSyncTask;
 use crate::master::tasks::Task;
 use crate::master::{
     AuthKey, BlockNumber, DeadBandHeader, DirReadConfig, FileCredentials, FileError, FileHandle,
-    FileInfo, FileMode, FileReadConfig, FileReader, Headers, OpenFile, ReadHandler, WriteError,
+    FileInfo, FileMode, FileReadConfig, FileReader, Headers, OpenFile, ReadHandler,
+    VirtualTerminalHeader, WriteError,
 };
 use crate::transport::FragmentAddr;
 use crate::util::channel::Sender;
@@ -377,6 +379,20 @@ impl AssociationHandle {
         rx.await?
     }
 
+    /// Write Virtual Terminal data (Group 112) to the outstation
+    ///
+    /// This sends VT output data using the WRITE function code with Group 112 objects.
+    /// The data can be used for protocol tunneling over DNP3.
+    pub async fn write_virtual_terminal(
+        &mut self,
+        headers: Vec<VirtualTerminalHeader>,
+    ) -> Result<(), WriteError> {
+        let (promise, rx) = Promise::one_shot();
+        let task = WriteVirtualTerminalTask::new(headers, promise);
+        self.send_task(task).await?;
+        rx.await?
+    }
+
     /// Trigger the master to issue a REQUEST_LINK_STATUS function in advance of the link status timeout
     ///
     /// This function is provided for testing purposes. Using the configured link status timeout
@@ -561,6 +577,8 @@ pub enum TaskType {
     FileClose,
     /// Get information about a file
     GetFileInfo,
+    /// Write virtual terminal data
+    WriteVirtualTerminal,
 }
 
 /// callbacks associated with a single master to outstation association

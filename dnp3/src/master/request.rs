@@ -221,6 +221,28 @@ pub(crate) enum DeadBandHeaderVariants {
     G34V3U16(Vec<(Group34Var3, u16)>),
 }
 
+/// Header for a Virtual Terminal write operation (Group 112)
+///
+/// Virtual Terminal objects are used for protocol tunneling over DNP3.
+/// Data is sent using the WRITE function code with Group 112 objects.
+#[derive(Clone, Debug)]
+pub struct VirtualTerminalHeader {
+    /// Virtual terminal port index (0-65535)
+    pub port: u16,
+    /// Data to write (max 255 bytes per object)
+    pub data: Vec<u8>,
+}
+
+impl VirtualTerminalHeader {
+    /// Create a new VT header with the given port and data
+    ///
+    /// Note: data is limited to 255 bytes per object due to the variation
+    /// being used as the size indicator.
+    pub fn new(port: u16, data: Vec<u8>) -> Self {
+        Self { port, data }
+    }
+}
+
 impl EventClasses {
     /// construct an `EventClasses` from its fields
     pub fn new(class1: bool, class2: bool, class3: bool) -> Self {

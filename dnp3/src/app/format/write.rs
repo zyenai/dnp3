@@ -102,6 +102,11 @@ impl<'a, 'b> HeaderWriter<'a, 'b> {
         Ok(())
     }
 
+    /// Write raw bytes directly to the cursor (for VT data, etc)
+    pub(crate) fn write_bytes(&mut self, data: &[u8]) -> Result<(), scursor::WriteError> {
+        self.cursor.write_bytes(data)
+    }
+
     pub(crate) fn write_prefixed_items<'c, V, I>(
         &mut self,
         iter: impl Iterator<Item = &'c (V, I)>,
