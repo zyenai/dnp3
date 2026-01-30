@@ -52,6 +52,16 @@ fn octet_string(value: &OctetString) -> WriteInfo<OctetString> {
     }
 }
 
+fn virtual_terminal(value: &VirtualTerminal) -> WriteInfo<VirtualTerminal> {
+    fn write(cursor: &mut WriteCursor, value: &VirtualTerminal) -> Result<(), WriteError> {
+        cursor.write_bytes(value.value())
+    }
+    WriteInfo {
+        variation: Variation::Group112(value.len()),
+        write_type: WriteType::Fixed(write),
+    }
+}
+
 #[derive(Copy, Clone)]
 pub(crate) enum WriteType<T> {
     Fixed(FixedWriteFn<T>),
@@ -261,5 +271,11 @@ impl StaticVariation<AnalogOutputStatus> for StaticAnalogOutputStatusVariation {
 impl StaticVariation<OctetString> for StaticOctetStringVariation {
     fn get_write_info(&self, value: &OctetString) -> WriteInfo<OctetString> {
         octet_string(value)
+    }
+}
+
+impl StaticVariation<VirtualTerminal> for StaticVirtualTerminalVariation {
+    fn get_write_info(&self, value: &VirtualTerminal) -> WriteInfo<VirtualTerminal> {
+        virtual_terminal(value)
     }
 }

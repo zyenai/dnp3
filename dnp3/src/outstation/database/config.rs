@@ -158,6 +158,22 @@ pub enum EventAnalogOutputStatusVariation {
 )]
 pub(crate) struct EventOctetStringVariation;
 
+// Virtual Terminal static variation is always g112vX
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub(crate) struct StaticVirtualTerminalVariation;
+
+// Virtual Terminal event variation is always g113vX
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub(crate) struct EventVirtualTerminalVariation;
+
 /// Enum representing all possible `BinaryInput` static variations
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -428,6 +444,20 @@ pub struct AnalogOutputStatusConfig {
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct OctetStringConfig;
+
+/// Configuration for a `VirtualTerminal` point
+///
+/// Virtual Terminal objects (Groups 112/113) convey bidirectional binary
+/// data streams. Per IEEE 1815-2012, they support arbitrary data transfer
+/// between master and outstation devices.
+///
+/// The variation is determined dynamically by the data size.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub struct VirtualTerminalConfig;
 
 impl BinaryInputConfig {
     /// construct a `BinaryConfig` from its fields

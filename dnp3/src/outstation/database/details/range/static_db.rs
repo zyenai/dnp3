@@ -93,6 +93,7 @@ pub(crate) enum SpecificVariation {
     Analog(Option<StaticAnalogInputVariation>),
     AnalogOutputStatus(Option<StaticAnalogOutputStatusVariation>),
     OctetString,
+    VirtualTerminal,
     AnalogDeadBand(Option<AnalogInputDeadBandVariation>),
 }
 
@@ -275,6 +276,7 @@ pub(crate) struct StaticDatabase {
     analog: PointMap<AnalogInput>,
     analog_output_status: PointMap<AnalogOutputStatus>,
     octet_strings: PointMap<OctetString>,
+    virtual_terminals: PointMap<VirtualTerminal>,
 }
 
 impl Default for StaticDatabase {
@@ -301,6 +303,7 @@ impl StaticDatabase {
             analog: PointMap::empty(),
             analog_output_status: PointMap::empty(),
             octet_strings: PointMap::empty(),
+            virtual_terminals: PointMap::empty(),
         }
     }
 
@@ -450,6 +453,9 @@ impl StaticDatabase {
             SpecificVariation::OctetString => {
                 self.write_typed_range::<OctetString>(cursor, range.range, None)
             }
+            SpecificVariation::VirtualTerminal => {
+                self.write_typed_range::<VirtualTerminal>(cursor, range.range, None)
+            }
             SpecificVariation::AnalogDeadBand(var) => {
                 self.write_analog_dead_bands(cursor, range.range, var)
             }
@@ -535,6 +541,9 @@ impl StaticDatabase {
                 self.select_by_type::<AnalogOutputStatus>(variation, range)
             }
             StaticReadHeader::OctetString(range) => self.select_by_type::<OctetString>(None, range),
+            StaticReadHeader::VirtualTerminal(range) => {
+                self.select_by_type::<VirtualTerminal>(None, range)
+            }
             StaticReadHeader::FrozenAnalog(_, _) => {
                 // we don't support this, but we know what it is
                 Iin2::default()
@@ -645,6 +654,8 @@ where
 
 pub(crate) struct OctetStringDetector;
 
+pub(crate) struct VirtualTerminalDetector;
+
 impl<N> Deadband<N>
 where
     N: std::ops::Sub<N, Output = N> + PartialOrd<N>,
@@ -722,6 +733,12 @@ where
 
 impl EventDetector<OctetString> for OctetStringDetector {
     fn is_event(&self, new: &OctetString, old: &OctetString) -> bool {
+        new.value() != old.value()
+    }
+}
+
+impl EventDetector<VirtualTerminal> for VirtualTerminalDetector {
+    fn is_event(&self, new: &VirtualTerminal, old: &VirtualTerminal) -> bool {
         new.value() != old.value()
     }
 }
@@ -942,6 +959,27 @@ impl Updatable for OctetString {
     }
 }
 
+impl Updatable for VirtualTerminal {
+    type StaticVariation = StaticVirtualTerminalVariation;
+    type Detector = VirtualTerminalDetector;
+
+    fn get_map(maps: &StaticDatabase) -> &PointMap<Self> {
+        &maps.virtual_terminals
+    }
+
+    fn get_mut_map(maps: &mut StaticDatabase) -> &mut PointMap<Self> {
+        &mut maps.virtual_terminals
+    }
+
+    fn wrap(range: IndexRange, _variation: Option<Self::StaticVariation>) -> VariationRange {
+        SpecificVariation::VirtualTerminal.with(range)
+    }
+
+    fn enabled_class_zero(config: &ClassZeroConfig) -> bool {
+        config.virtual_terminal
+    }
+}
+
 impl Default for BinaryInput {
     fn default() -> Self {
         Self::new(false, Flags::RESTART, Time::unsynchronized(0))
@@ -991,6 +1029,12 @@ impl Default for AnalogOutputStatus {
 impl Default for OctetString {
     fn default() -> Self {
         Self::new(&[0x00]).unwrap()
+    }
+}
+
+impl Default for VirtualTerminal {
+    fn default() -> Self {
+        Self::new(&[]).unwrap()
     }
 }
 

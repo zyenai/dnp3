@@ -83,6 +83,8 @@ pub struct TypeCount {
     pub num_analog_output_status: usize,
     /// number octet string events remaining in the buffer
     pub num_octet_string: usize,
+    /// number virtual terminal events remaining in the buffer
+    pub num_virtual_terminal: usize,
 }
 
 /// Information about the state of buffer after a CONFIRM has been processed

@@ -707,6 +707,7 @@ impl From<ffi::ClassZeroConfig> for ClassZeroConfig {
             analog: from.analog(),
             analog_output_status: from.analog_output_status(),
             octet_string: from.octet_string(),
+            virtual_terminal: false, // FFI doesn't expose this yet
         }
     }
 }
@@ -722,6 +723,7 @@ impl From<&ffi::EventBufferConfig> for EventBufferConfig {
             max_analog: from.max_analog(),
             max_analog_output_status: from.max_analog_output_status(),
             max_octet_string: from.max_octet_string(),
+            max_virtual_terminal: 0, // FFI doesn't expose this yet
         }
     }
 }

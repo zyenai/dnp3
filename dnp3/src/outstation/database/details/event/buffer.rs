@@ -11,9 +11,9 @@ use crate::outstation::database::{EventBufferConfig, EventClass};
 use crate::util::BadWrite;
 
 use super::list::VecList;
-use super::writer::EventWriter;
+use super::writer::{EventWriter, VtEventData};
 
-use crate::outstation::database::details::event::traits::OctetStringLength;
+use crate::outstation::database::details::event::traits::{OctetStringLength, VirtualTerminalLength};
 use crate::outstation::{BufferState, ClassCount, OutstationApplication, TypeCount};
 use scursor::WriteCursor;
 
@@ -165,6 +165,7 @@ pub(crate) struct TypeCounter {
     num_analog: Count,
     num_analog_output_status: Count,
     num_octet_string: Count,
+    num_virtual_terminal: Count,
 }
 
 impl From<TypeCounter> for TypeCount {
@@ -178,6 +179,7 @@ impl From<TypeCounter> for TypeCount {
             num_analog: value.num_analog.value,
             num_analog_output_status: value.num_analog_output_status.value,
             num_octet_string: value.num_octet_string.value,
+            num_virtual_terminal: value.num_virtual_terminal.value,
         }
     }
 }
@@ -193,6 +195,7 @@ impl TypeCounter {
             num_analog: Count::new(),
             num_analog_output_status: Count::new(),
             num_octet_string: Count::new(),
+            num_virtual_terminal: Count::new(),
         }
     }
 
@@ -205,6 +208,7 @@ impl TypeCounter {
         self.num_analog.zero();
         self.num_analog_output_status.zero();
         self.num_octet_string.zero();
+        self.num_virtual_terminal.zero();
     }
 
     fn increment(&mut self, event: &Event) {
@@ -230,6 +234,7 @@ impl TypeCounter {
             Event::Analog(_, _) => op(&mut self.num_analog),
             Event::AnalogOutputStatus(_, _) => op(&mut self.num_analog_output_status),
             Event::OctetString(_, _) => op(&mut self.num_octet_string),
+            Event::VirtualTerminal(_, _) => op(&mut self.num_virtual_terminal),
         }
     }
 }
@@ -278,6 +283,7 @@ impl Counters {
             Event::Analog(_, _) => self.types.num_analog.decrement(),
             Event::AnalogOutputStatus(_, _) => self.types.num_analog_output_status.decrement(),
             Event::OctetString(_, _) => self.types.num_octet_string.decrement(),
+            Event::VirtualTerminal(_, _) => self.types.num_virtual_terminal.decrement(),
         }
     }
 }
@@ -335,6 +341,7 @@ pub(crate) enum Event {
         Variation<EventAnalogOutputStatusVariation>,
     ),
     OctetString(Box<[u8]>, Variation<EventOctetStringVariation>),
+    VirtualTerminal(Box<[u8]>, Variation<EventVirtualTerminalVariation>),
 }
 
 impl Event {
@@ -348,6 +355,7 @@ impl Event {
             Event::Analog(_, v) => v.select_default(),
             Event::AnalogOutputStatus(_, v) => v.select_default(),
             Event::OctetString(_, v) => v.select_default(),
+            Event::VirtualTerminal(_, v) => v.select_default(),
         }
     }
 
@@ -367,6 +375,9 @@ impl Event {
             Event::AnalogOutputStatus(evt, v) => writer.write(cursor, evt, index, v.selected.get()),
             Event::OctetString(evt, _) => {
                 writer.write(cursor, evt, index, OctetStringLength(evt.len()))
+            }
+            Event::VirtualTerminal(evt, _) => {
+                writer.write(cursor, &VtEventData(evt), index, VirtualTerminalLength(evt.len()))
             }
         }
     }
@@ -528,6 +539,9 @@ impl EventBuffer {
             }
             EventReadHeader::OctetString(limit) => {
                 self.select_by_type::<measurement::OctetString>(None, limit)
+            }
+            EventReadHeader::VirtualTerminal(limit) => {
+                self.select_by_type::<measurement::VirtualTerminal>(None, limit)
             }
             EventReadHeader::FrozenAnalog(_, _) => {
                 // not currently supported
@@ -988,6 +1002,43 @@ impl Insertable for measurement::OctetString {
 
     fn select_variation(record: &EventRecord, variation: Self::EventVariation) -> bool {
         if let Event::OctetString(_, v) = &record.event {
+            v.selected.set(variation);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Insertable for measurement::VirtualTerminal {
+    type EventVariation = EventVirtualTerminalVariation;
+
+    fn get_max(config: &EventBufferConfig) -> u16 {
+        config.max_virtual_terminal
+    }
+
+    fn get_type_count(counter: &TypeCounter) -> usize {
+        counter.num_virtual_terminal.get()
+    }
+
+    fn is_type(record: &EventRecord) -> bool {
+        std::matches!(record.event, Event::VirtualTerminal(_, _))
+    }
+
+    fn decrement_type(counter: &mut TypeCounter) {
+        counter.num_virtual_terminal.decrement();
+    }
+
+    fn increment_type(counter: &mut TypeCounter) {
+        counter.num_virtual_terminal.increment();
+    }
+
+    fn create_event(&self, default_variation: EventVirtualTerminalVariation) -> Event {
+        Event::VirtualTerminal(self.as_boxed_slice(), Variation::new(default_variation))
+    }
+
+    fn select_variation(record: &EventRecord, variation: Self::EventVariation) -> bool {
+        if let Event::VirtualTerminal(_, v) = &record.event {
             v.selected.set(variation);
             true
         } else {

@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 pub use config::*;
-use details::range::static_db::{Deadband, FlagsDetector, OctetStringDetector, PointConfig};
+use details::range::static_db::{
+    Deadband, FlagsDetector, OctetStringDetector, PointConfig, VirtualTerminalDetector,
+};
 
 use crate::app::measurement::*;
 use crate::app::parse::parser::HeaderCollection;
@@ -69,6 +71,9 @@ pub struct ClassZeroConfig {
     /// If true, Octet Strings are reported in Class 0 READ requests
     /// This field defaults to `false` for conformance to the standard
     pub octet_string: bool,
+    /// If true, Virtual Terminal data is reported in Class 0 READ requests
+    /// This field defaults to `false` for conformance to the standard
+    pub virtual_terminal: bool,
 }
 
 impl ClassZeroConfig {
@@ -83,6 +88,7 @@ impl ClassZeroConfig {
         analog: bool,
         analog_output_status: bool,
         octet_string: bool,
+        virtual_terminal: bool,
     ) -> Self {
         ClassZeroConfig {
             binary,
@@ -93,6 +99,7 @@ impl ClassZeroConfig {
             analog,
             analog_output_status,
             octet_string,
+            virtual_terminal,
         }
     }
 }
@@ -108,6 +115,7 @@ impl Default for ClassZeroConfig {
             analog: true,
             analog_output_status: true,
             octet_string: false,
+            virtual_terminal: false,
         }
     }
 }
@@ -145,12 +153,15 @@ pub struct EventBufferConfig {
     /// maximum number of octet string events (g111)
     #[cfg_attr(feature = "serialization", serde(default))]
     pub max_octet_string: u16,
+    /// maximum number of virtual terminal events (g113)
+    #[cfg_attr(feature = "serialization", serde(default))]
+    pub max_virtual_terminal: u16,
 }
 
 impl EventBufferConfig {
     /// initialize with the same maximum values for all types
     pub fn all_types(max: u16) -> Self {
-        Self::new(max, max, max, max, max, max, max, max)
+        Self::new(max, max, max, max, max, max, max, max, max)
     }
 
     /// initialize the configuration to support no events
@@ -169,6 +180,7 @@ impl EventBufferConfig {
         max_analog: u16,
         max_analog_output_status: u16,
         max_octet_string: u16,
+        max_virtual_terminal: u16,
     ) -> Self {
         Self {
             max_binary,
@@ -179,6 +191,7 @@ impl EventBufferConfig {
             max_analog,
             max_analog_output_status,
             max_octet_string,
+            max_virtual_terminal,
         }
     }
 
@@ -191,6 +204,7 @@ impl EventBufferConfig {
             + self.max_analog as usize
             + self.max_analog_output_status as usize
             + self.max_octet_string as usize
+            + self.max_virtual_terminal as usize
     }
 }
 
@@ -589,6 +603,17 @@ impl Update<OctetString> for Database {
     }
 }
 
+impl Update<VirtualTerminal> for Database {
+    fn update2(
+        &mut self,
+        index: u16,
+        value: &VirtualTerminal,
+        options: UpdateOptions,
+    ) -> UpdateInfo {
+        self.inner.update(value, index, options)
+    }
+}
+
 impl Add<BinaryInputConfig> for Database {
     fn add(&mut self, index: u16, class: Option<EventClass>, config: BinaryInputConfig) -> bool {
         let config =
@@ -696,6 +721,23 @@ impl Add<OctetStringConfig> for Database {
     }
 }
 
+impl Add<VirtualTerminalConfig> for Database {
+    fn add(
+        &mut self,
+        index: u16,
+        class: Option<EventClass>,
+        _config: VirtualTerminalConfig,
+    ) -> bool {
+        let config = PointConfig::<VirtualTerminal>::new(
+            class,
+            VirtualTerminalDetector,
+            StaticVirtualTerminalVariation,
+            EventVirtualTerminalVariation,
+        );
+        self.inner.add(index, config)
+    }
+}
+
 impl Remove<BinaryInput> for Database {
     fn remove(&mut self, index: u16) -> bool {
         self.inner.remove::<BinaryInput>(index)
@@ -744,6 +786,12 @@ impl Remove<OctetString> for Database {
     }
 }
 
+impl Remove<VirtualTerminal> for Database {
+    fn remove(&mut self, index: u16) -> bool {
+        self.inner.remove::<VirtualTerminal>(index)
+    }
+}
+
 impl Get<BinaryInput> for Database {
     fn get(&self, index: u16) -> Option<BinaryInput> {
         self.inner.get::<BinaryInput>(index)
@@ -789,6 +837,12 @@ impl Get<AnalogOutputStatus> for Database {
 impl Get<OctetString> for Database {
     fn get(&self, index: u16) -> Option<OctetString> {
         self.inner.get::<OctetString>(index)
+    }
+}
+
+impl Get<VirtualTerminal> for Database {
+    fn get(&self, index: u16) -> Option<VirtualTerminal> {
+        self.inner.get::<VirtualTerminal>(index)
     }
 }
 

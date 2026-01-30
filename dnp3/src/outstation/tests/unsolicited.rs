@@ -209,6 +209,7 @@ async fn defers_read_during_unsol_confirm_wait() {
                 num_analog: 0,
                 num_analog_output_status: 0,
                 num_octet_string: 0,
+                num_virtual_terminal: 0,
             },
         }),
     ]);

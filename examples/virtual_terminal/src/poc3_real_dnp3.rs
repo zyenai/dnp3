@@ -1,8 +1,10 @@
-//! PoC 3: Real DNP3 Traffic Demo
+//! PoC 3: Real DNP3 Traffic Demo with Virtual Terminal Objects
 //!
-//! This module demonstrates real DNP3 traffic using OctetString events.
+//! This module demonstrates real DNP3 traffic using Virtual Terminal objects
+//! (Groups 112/113) as specified in IEEE 1815-2012.
+//!
 //! Run the outstation and master in separate terminals to see DNP3 packets
-//! in Wireshark.
+//! in Wireshark with proper VT object groups.
 //!
 //! ## Usage
 //!
@@ -17,6 +19,11 @@
 //! ```
 //!
 //! Wireshark filter: `tcp.port == 20000`
+//!
+//! ## DNP3 Object Groups
+//!
+//! - Group 112: Virtual Terminal Output Block (master -> outstation)
+//! - Group 113: Virtual Terminal Event Data (outstation -> master)
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,29 +73,34 @@ impl OutstationApplication for DemoOutstationApp {
 struct DemoOutstationInfo;
 impl OutstationInformation for DemoOutstationInfo {}
 
-/// Run the demo outstation - generates OctetString events with tunnel frames
+/// Run the demo outstation - generates Virtual Terminal events with tunnel frames
 pub async fn run_demo_outstation(
     config: RealDnp3Config,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!();
     println!("================================================================");
-    println!("  PoC 3: Real DNP3 Outstation (Server Side)");
+    println!("  PoC 3: Real DNP3 Outstation with Virtual Terminal Objects");
     println!("================================================================");
     println!();
     println!("  Listening on: {}", config.dnp3_addr);
     println!("  Outstation address: {}", config.outstation_addr);
     println!("  Master address: {}", config.master_addr);
     println!();
+    println!("  DNP3 Objects:");
+    println!("    - Group 112: Virtual Terminal Output Block (master -> outstation)");
+    println!("    - Group 113: Virtual Terminal Event Data (outstation -> master)");
+    println!();
     println!("  Wireshark filter: tcp.port == {}", config.dnp3_addr.port());
     println!();
     println!("----------------------------------------------------------------");
     println!();
 
-    // Create outstation config
+    // Create outstation config with VT event buffer
     let mut outstation_config = OutstationConfig::new(
         EndpointAddress::try_new(config.outstation_addr).unwrap(),
         EndpointAddress::try_new(config.master_addr).unwrap(),
-        EventBufferConfig::new(0, 0, 0, 0, 0, 0, 0, 100),
+        // Last parameter is max_virtual_terminal events
+        EventBufferConfig::new(0, 0, 0, 0, 0, 0, 0, 0, 100),
     );
     outstation_config.decode_level = AppDecodeLevel::ObjectValues.into();
 
@@ -104,9 +116,9 @@ pub async fn run_demo_outstation(
         AddressFilter::Any,
     )?;
 
-    // Initialize database with OctetString point
+    // Initialize database with Virtual Terminal point (port 0)
     outstation.transaction(|db| {
-        db.add(0, Some(EventClass::Class1), OctetStringConfig);
+        db.add(0, Some(EventClass::Class1), VirtualTerminalConfig);
     });
 
     // Spawn event generator
@@ -117,10 +129,10 @@ pub async fn run_demo_outstation(
         let mut seq: u8 = 0;
 
         // Simulated data - SSH banner
-        let ssh_banner = b"SSH-2.0-DNP3_Tunnel_Demo\r\n";
+        let ssh_banner = b"SSH-2.0-DNP3_VT_Tunnel\r\n";
 
-        println!("[Outstation] Starting event generator...");
-        println!("[Outstation] Will generate OctetString events with tunnel frames");
+        println!("[Outstation] Starting VT event generator...");
+        println!("[Outstation] Will generate Group 113 (VT Event) objects with tunnel frames");
         println!();
 
         // Initial delay
@@ -133,15 +145,15 @@ pub async fn run_demo_outstation(
             for frame in &frames {
                 let frame_bytes = frame.to_bytes();
                 println!(
-                    "[Outstation] Generating event: seq={}, len={}, more={}",
+                    "[Outstation] Generating VT event: seq={}, len={}, more={}",
                     frame.sequence,
                     frame.payload.len(),
                     frame.is_more_fragments()
                 );
 
                 outstation.transaction(|db| {
-                    if let Ok(octet) = OctetString::new(&frame_bytes) {
-                        db.update(0, &octet, UpdateOptions::detect_event());
+                    if let Ok(vt_data) = VirtualTerminal::new(&frame_bytes) {
+                        db.update(0, &vt_data, UpdateOptions::detect_event());
                     }
                 });
             }
@@ -157,15 +169,18 @@ pub async fn run_demo_outstation(
     println!("[Outstation] Server starting...");
     server.bind().await?;
 
-    running.store(false, Ordering::Relaxed);
-    Ok(())
+    // Keep running until interrupted
+    println!("[Outstation] Server running. Press Ctrl+C to exit.");
+    loop {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
 }
 
 // ============================================================================
 // MASTER
 // ============================================================================
 
-/// Read handler that prints received OctetString events
+/// Read handler that prints received Virtual Terminal events
 struct DemoReadHandler;
 
 impl ReadHandler for DemoReadHandler {
@@ -182,18 +197,44 @@ impl ReadHandler for DemoReadHandler {
         MaybeAsync::ready(())
     }
 
-    fn handle_octet_string<'a>(
+    fn handle_virtual_terminal_output<'a>(
         &mut self,
         info: HeaderInfo,
         iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
     ) {
         println!(
-            "[Master] << OctetString header: variation={}, is_event={}",
+            "[Master] << VT Output (G112) header: variation={}, is_event={}",
             info.variation, info.is_event
         );
+        self.handle_vt_data(iter, "Output");
+    }
 
+    fn handle_virtual_terminal_event<'a>(
+        &mut self,
+        info: HeaderInfo,
+        iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
+    ) {
+        println!(
+            "[Master] << VT Event (G113) header: variation={}, is_event={}",
+            info.variation, info.is_event
+        );
+        self.handle_vt_data(iter, "Event");
+    }
+}
+
+impl DemoReadHandler {
+    fn handle_vt_data<'a>(
+        &mut self,
+        iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
+        vt_type: &str,
+    ) {
         for (data, index) in iter {
-            println!("[Master] << OctetString[{}]: {} bytes", index, data.len());
+            println!(
+                "[Master] << VT {} [port {}]: {} bytes",
+                vt_type,
+                index,
+                data.len()
+            );
 
             // Try to parse as tunnel frame
             if let Ok(frame) = TunnelFrame::from_bytes(data) {
@@ -209,7 +250,13 @@ impl ReadHandler for DemoReadHandler {
                     let ascii: String = frame
                         .payload
                         .iter()
-                        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+                        .map(|&b| {
+                            if b.is_ascii_graphic() || b == b' ' {
+                                b as char
+                            } else {
+                                '.'
+                            }
+                        })
                         .collect();
                     println!("[Master]    Payload (ASCII): {}", ascii);
                 }
@@ -240,18 +287,22 @@ impl AssociationInformation for DemoAssociationInfo {
     }
 }
 
-/// Run the demo master - polls for OctetString events
+/// Run the demo master - polls for Virtual Terminal events
 pub async fn run_demo_master(
     config: RealDnp3Config,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!();
     println!("================================================================");
-    println!("  PoC 3: Real DNP3 Master (Client Side)");
+    println!("  PoC 3: Real DNP3 Master with Virtual Terminal Objects");
     println!("================================================================");
     println!();
     println!("  Connecting to: {}", config.dnp3_addr);
     println!("  Master address: {}", config.master_addr);
     println!("  Outstation address: {}", config.outstation_addr);
+    println!();
+    println!("  DNP3 Objects:");
+    println!("    - Group 112: Virtual Terminal Output Block (master -> outstation)");
+    println!("    - Group 113: Virtual Terminal Event Data (outstation -> master)");
     println!();
     println!("  Wireshark filter: tcp.port == {}", config.dnp3_addr.port());
     println!();
@@ -302,7 +353,7 @@ pub async fn run_demo_master(
     println!("[Master] Enabling communications...");
     channel.enable().await?;
 
-    println!("[Master] Polling for events every 2 seconds");
+    println!("[Master] Polling for VT events (G113) every 2 seconds");
     println!("[Master] Press Ctrl+C to exit");
     println!();
 
@@ -322,8 +373,9 @@ pub async fn run_combined_test() -> Result<(), Box<dyn std::error::Error + Send 
 
     println!();
     println!("================================================================");
-    println!("  PoC 3: Real DNP3 Combined Test");
+    println!("  PoC 3: Real DNP3 Combined Test with Virtual Terminal Objects");
     println!("  This generates REAL DNP3 traffic on port 20000");
+    println!("  Using Group 112/113 (Virtual Terminal) objects");
     println!("================================================================");
     println!();
     println!("Wireshark filter: tcp.port == 20000");

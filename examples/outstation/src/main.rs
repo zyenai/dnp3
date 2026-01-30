@@ -812,6 +812,7 @@ fn get_event_buffer_config() -> EventBufferConfig {
         5,  // analog
         5,  // analog output status
         3,  // octet string
+        10, // virtual terminal
     )
 }
 // ANCHOR_END: event_buffer_config

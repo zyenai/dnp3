@@ -861,6 +861,70 @@ pub enum OctetStringLengthError {
     MoreThan255Octets,
 }
 
+/// Virtual Terminal point type corresponding to groups 112 and 113
+///
+/// Virtual Terminal objects convey binary octet data streams between master
+/// and outstation devices. Per IEEE 1815-2012, they support bidirectional
+/// communication of arbitrary binary data.
+///
+/// - Group 112: Virtual Terminal Output Block (master -> outstation)
+/// - Group 113: Virtual Terminal Event Data (outstation -> master)
+///
+/// Virtual Terminal objects can hold from 0 to 255 octets per block.
+/// The point index specifies the virtual port number.
+#[allow(missing_copy_implementations)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct VirtualTerminal {
+    value: [u8; Self::MAX_SIZE],
+    len: u8,
+}
+
+#[allow(clippy::len_without_is_empty)]
+impl VirtualTerminal {
+    const MAX_SIZE: usize = 255;
+
+    /// Creates a new virtual terminal data block.
+    ///
+    /// The `value` parameter must have a length <= 255 bytes.
+    pub fn new(value: &[u8]) -> Result<Self, VirtualTerminalLengthError> {
+        let len = value.len();
+
+        if len > Self::MAX_SIZE {
+            return Err(VirtualTerminalLengthError::MoreThan255Octets);
+        }
+
+        let mut result = Self {
+            value: [0u8; Self::MAX_SIZE],
+            len: len as u8,
+        };
+        result.value[..len].copy_from_slice(value);
+        Ok(result)
+    }
+
+    /// Returns the value of the virtual terminal data
+    pub fn value(&self) -> &[u8] {
+        &self.value[..self.len() as usize]
+    }
+
+    /// Returns the length of the virtual terminal data
+    pub fn len(&self) -> u8 {
+        self.len
+    }
+
+    /// Allocates a new slice with the exact size of the data
+    /// and copies the content to it.
+    pub(crate) fn as_boxed_slice(&self) -> Box<[u8]> {
+        self.value().into()
+    }
+}
+
+/// Errors when creating a virtual terminal data block
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum VirtualTerminalLengthError {
+    /// Virtual terminal blocks can only hold up to 255 octets.
+    MoreThan255Octets,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

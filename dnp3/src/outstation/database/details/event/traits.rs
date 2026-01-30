@@ -4,7 +4,7 @@ use crate::outstation::database::config::*;
 use crate::outstation::database::details::event::write_fn::{
     write_cto, write_fixed_size, Continue,
 };
-use crate::outstation::database::details::event::writer::HeaderType;
+use crate::outstation::database::details::event::writer::{HeaderType, VtEventData};
 
 use scursor::{WriteCursor, WriteError};
 
@@ -12,6 +12,9 @@ use super::write_fn::write_octet_string;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) struct OctetStringLength(pub(crate) usize);
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(crate) struct VirtualTerminalLength(pub(crate) usize);
 
 pub(crate) trait EventVariation<T> {
     fn write(
@@ -333,5 +336,47 @@ impl EventVariation<Box<[u8]>> for OctetStringLength {
 
     fn get_group_var(&self, event: &Box<[u8]>) -> (u8, u8) {
         (111, event.len() as u8)
+    }
+}
+
+impl EventVariation<Box<[u8]>> for VirtualTerminalLength {
+    fn write(
+        &self,
+        cursor: &mut WriteCursor,
+        event: &Box<[u8]>,
+        index: u16,
+        _cto: Time,
+    ) -> Result<Continue, WriteError> {
+        // VT events use the same format as octet strings
+        write_octet_string(cursor, event, index)
+    }
+
+    fn wrap(&self) -> HeaderType {
+        HeaderType::VirtualTerminal(*self)
+    }
+
+    fn get_group_var(&self, event: &Box<[u8]>) -> (u8, u8) {
+        (113, event.len() as u8) // Group 113 = Virtual Terminal Event Data
+    }
+}
+
+impl<'a> EventVariation<VtEventData<'a>> for VirtualTerminalLength {
+    fn write(
+        &self,
+        cursor: &mut WriteCursor,
+        event: &VtEventData<'a>,
+        index: u16,
+        _cto: Time,
+    ) -> Result<Continue, WriteError> {
+        // VT events use the same format as octet strings
+        write_octet_string(cursor, event.0, index)
+    }
+
+    fn wrap(&self) -> HeaderType {
+        HeaderType::VirtualTerminal(*self)
+    }
+
+    fn get_group_var(&self, event: &VtEventData<'a>) -> (u8, u8) {
+        (113, event.0.len() as u8) // Group 113 = Virtual Terminal Event Data
     }
 }
