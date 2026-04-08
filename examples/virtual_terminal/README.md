@@ -69,9 +69,11 @@ The dnp3 library currently supports:
 - [x] Parsing of Group 112 objects (ranged format)
 - [x] Parsing of Group 113 objects (prefixed/event format)
 - [x] ReadHandler callbacks for receiving VT data
-- [ ] Master API for writing Group 112 data
-- [ ] Outstation callbacks for receiving Group 112 writes
-- [ ] Database support for VT event generation
+- [x] Master API for writing Group 112 data (`AssociationHandle::write_virtual_terminal`)
+- [x] Outstation callbacks for receiving Group 112 writes (`OutstationApplication::handle_virtual_terminal_write`)
+- [x] OctetString event generation for carrying VT data from outstation to master
+
+See [TUNNEL.md](TUNNEL.md) for the full SSH tunneling PoC built on these primitives.
 
 This example uses a simulated terminal interpreter to demonstrate the protocol
 flow defined in IEEE 1815-2012.
