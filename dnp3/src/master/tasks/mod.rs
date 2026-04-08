@@ -17,6 +17,7 @@ use crate::master::{ReadType, TaskType};
 
 use crate::master::tasks::deadbands::WriteDeadBandsTask;
 use crate::master::tasks::empty_response::EmptyResponseTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::file::authenticate::AuthFileTask;
 use crate::master::tasks::file::close::CloseFileTask;
 use crate::master::tasks::file::get_info::GetFileInfoTask;
@@ -31,6 +32,7 @@ pub(crate) mod deadbands;
 pub(crate) mod empty_response;
 
 pub(crate) mod file;
+pub(crate) mod virtual_terminal;
 pub(crate) mod read;
 pub(crate) mod restart;
 pub(crate) mod time;
@@ -160,6 +162,8 @@ pub(crate) enum NonReadTask {
     EmptyResponseTask(EmptyResponseTask),
     /// Read file from the outstation
     FileRead(FileReadTask),
+    /// Write virtual terminal data (G112) to the outstation
+    VirtualTerminalWrite(WriteVirtualTerminalTask),
     /// Send username/password and get back an auth key
     AuthFile(AuthFileTask),
     /// Open a file on the outstation
@@ -202,6 +206,7 @@ impl RequestWriter for NonReadTask {
             NonReadTask::DeadBands(t) => t.write(writer)?,
             NonReadTask::EmptyResponseTask(t) => t.write(writer)?,
             NonReadTask::FileRead(t) => t.write(writer)?,
+            NonReadTask::VirtualTerminalWrite(t) => t.write(writer)?,
             NonReadTask::GetFileInfo(t) => t.write(writer)?,
             NonReadTask::OpenFile(t) => t.write(writer)?,
             NonReadTask::CloseFile(t) => t.write(writer)?,
@@ -304,6 +309,7 @@ impl NonReadTask {
             Self::DeadBands(_) => Some(self),
             Self::EmptyResponseTask(_) => Some(self),
             Self::FileRead(_) => Some(self),
+            Self::VirtualTerminalWrite(_) => Some(self),
             Self::GetFileInfo(_) => Some(self),
             Self::OpenFile(_) => Some(self),
             Self::CloseFile(_) => Some(self),
@@ -321,6 +327,7 @@ impl NonReadTask {
             Self::DeadBands(task) => task.function(),
             Self::EmptyResponseTask(task) => task.function(),
             Self::FileRead(task) => task.function(),
+            Self::VirtualTerminalWrite(task) => task.function(),
             Self::GetFileInfo(task) => task.function(),
             Self::OpenFile(task) => task.function(),
             Self::CloseFile(task) => task.function(),
@@ -338,6 +345,7 @@ impl NonReadTask {
             Self::DeadBands(task) => task.on_task_error(err),
             Self::EmptyResponseTask(task) => task.on_task_error(err),
             Self::FileRead(task) => task.on_task_error(err),
+            Self::VirtualTerminalWrite(task) => task.on_task_error(err),
             Self::GetFileInfo(task) => task.on_task_error(err),
             Self::OpenFile(task) => task.on_task_error(err),
             Self::CloseFile(task) => task.on_task_error(err),
@@ -359,6 +367,7 @@ impl NonReadTask {
             Self::DeadBands(task) => task.handle(response),
             Self::EmptyResponseTask(task) => task.handle(response),
             Self::FileRead(task) => task.handle(response).await,
+            Self::VirtualTerminalWrite(task) => task.handle(response),
             Self::GetFileInfo(task) => task.handle(response),
             Self::OpenFile(task) => task.handle(response),
             Self::CloseFile(task) => task.handle(response),
@@ -380,6 +389,7 @@ impl NonReadTask {
             Self::DeadBands(_) => TaskType::WriteDeadBands,
             Self::EmptyResponseTask(_) => TaskType::GenericEmptyResponse(self.function()),
             Self::FileRead(_) => TaskType::FileRead,
+            Self::VirtualTerminalWrite(_) => TaskType::WriteVirtualTerminal,
             Self::GetFileInfo(_) => TaskType::GetFileInfo,
             Self::AuthFile(_) => TaskType::GetFileInfo,
             Self::OpenFile(_) => TaskType::FileOpen,

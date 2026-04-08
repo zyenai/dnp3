@@ -14,6 +14,7 @@ use crate::master::request::{CommandHeaders, CommandMode, ReadRequest, TimeSyncP
 use crate::master::tasks::command::CommandTask;
 use crate::master::tasks::deadbands::WriteDeadBandsTask;
 use crate::master::tasks::empty_response::EmptyResponseTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::file::authenticate::AuthFileTask;
 use crate::master::tasks::file::close::CloseFileTask;
 use crate::master::tasks::file::directory::DirectoryReader;
@@ -377,6 +378,21 @@ impl AssociationHandle {
         rx.await?
     }
 
+    /// Write data to a virtual terminal port on the outstation using Group 112 (G112VarX WRITE)
+    ///
+    /// * `port` is the virtual terminal port index (DNP3 point number)
+    /// * `data` is the payload to send (max 255 bytes)
+    pub async fn write_virtual_terminal(
+        &mut self,
+        port: u8,
+        data: Vec<u8>,
+    ) -> Result<(), WriteError> {
+        let (promise, rx) = Promise::one_shot();
+        let task = WriteVirtualTerminalTask::new(port, data, promise);
+        self.send_task(task).await?;
+        rx.await?
+    }
+
     /// Trigger the master to issue a REQUEST_LINK_STATUS function in advance of the link status timeout
     ///
     /// This function is provided for testing purposes. Using the configured link status timeout
@@ -547,6 +563,8 @@ pub enum TaskType {
     Restart,
     /// Write dead-bands
     WriteDeadBands,
+    /// Write virtual terminal data (G112)
+    WriteVirtualTerminal,
     /// Generic task which
     GenericEmptyResponse(FunctionCode),
     /// Read a file from the outstation

@@ -37,6 +37,7 @@ use crate::util::phys::PhysLayer;
 
 use crate::app::gen::prefixed::PrefixedVariation;
 use crate::app::parse::bit::BitSequence;
+use crate::app::parse::bytes::RangedBytesSequence;
 use crate::app::parse::prefix::Prefix;
 use crate::app::parse::traits::{FixedSizeVariation, Index};
 use crate::util::session::{Enabled, RunError, StopReason};
@@ -1397,6 +1398,13 @@ impl OutstationSession {
             HeaderDetails::TwoByteCountAndPrefix(_, PrefixedVariation::Group34Var3(seq)) => {
                 self.handle_write_analog_deadbands(seq, db).await
             }
+            // Virtual Terminal Output Block (G112) - data from master to outstation
+            HeaderDetails::OneByteStartStop(_, _, RangedVariation::Group112VarX(_, seq)) => {
+                self.handle_write_virtual_terminal(seq)
+            }
+            HeaderDetails::TwoByteStartStop(_, _, RangedVariation::Group112VarX(_, seq)) => {
+                self.handle_write_virtual_terminal(seq)
+            }
             _ => {
                 tracing::warn!(
                     "WRITE not supported with qualifier: {} and variation: {}",
@@ -1406,6 +1414,22 @@ impl OutstationSession {
                 Iin2::NO_FUNC_CODE_SUPPORT
             }
         }
+    }
+
+    fn handle_write_virtual_terminal(&mut self, seq: RangedBytesSequence<'_>) -> Iin2 {
+        let mut iin2 = Iin2::default();
+        for (data, index) in seq.iter() {
+            match self.application.handle_virtual_terminal_write(index, data) {
+                Ok(()) => {}
+                Err(RequestError::NotSupported) => {
+                    iin2 |= Iin2::NO_FUNC_CODE_SUPPORT;
+                }
+                Err(RequestError::ParameterError) => {
+                    iin2 |= Iin2::PARAMETER_ERROR;
+                }
+            }
+        }
+        iin2
     }
 
     fn handle_write_at_last_recorded_time(&mut self, seq: CountSequence<Group50Var3>) -> Iin2 {
