@@ -209,6 +209,24 @@ pub trait OutstationApplication: Sync + Send + 'static {
         MaybeAsync::ready(true)
     }
 
+    /// Called when the outstation receives a WRITE request containing Group 112 (Virtual Terminal
+    /// Output Block) data from the master.
+    ///
+    /// * `port` is the virtual terminal port index (DNP3 point number)
+    /// * `data` is the payload sent by the master
+    ///
+    /// The default implementation ignores the data. Return [`RequestError::NotSupported`] to
+    /// indicate that the outstation does not support this operation; the outstation will then
+    /// respond with IIN2.0 NO_FUNC_CODE_SUPPORT.
+    #[allow(unused_variables)]
+    fn handle_virtual_terminal_write(
+        &mut self,
+        port: u16,
+        data: &[u8],
+    ) -> Result<(), RequestError> {
+        Ok(())
+    }
+
     /// Called when a CONFIRM is received to a response or unsolicited response, but before any
     /// previously transmitted events are cleared from the buffer
     fn begin_confirm(&mut self) {}

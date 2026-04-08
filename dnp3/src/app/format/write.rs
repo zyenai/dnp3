@@ -136,6 +136,26 @@ impl<'a, 'b> HeaderWriter<'a, 'b> {
         Ok(())
     }
 
+    /// Write a Group 112 VarX (Virtual Terminal Output) object with Range8 qualifier.
+    ///
+    /// Format: G112VarX  0x00 (Range8)  start(u8)  stop(u8)  data[X]
+    /// where X = data.len() and port = start = stop.
+    pub(crate) fn write_virtual_terminal_output(
+        &mut self,
+        port: u8,
+        data: &[u8],
+    ) -> Result<(), scursor::WriteError> {
+        debug_assert!(!data.is_empty(), "VT data must be non-empty");
+        debug_assert!(data.len() <= 255, "VT data length exceeds u8 max");
+        let var = data.len() as u8;
+        Variation::Group112(var).write(self.cursor)?;
+        QualifierCode::Range8.write(self.cursor)?;
+        self.cursor.write_u8(port)?; // start
+        self.cursor.write_u8(port)?; // stop
+        self.cursor.write_bytes(data)?;
+        Ok(())
+    }
+
     pub(crate) fn write_attribute(&mut self, attr: &OwnedAttribute) -> Result<(), AttrWriteError> {
         let variation = Variation::Group0(attr.variation);
         variation.write(self.cursor)?;
