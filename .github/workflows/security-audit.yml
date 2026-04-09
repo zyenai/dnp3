@@ -28,26 +28,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+      - name: Cache cargo-audit binary
+        uses: actions/cache@v4
+        id: cache-cargo-audit
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.1-${{ runner.os }}
 
-      - name: Install cargo-audit binary (fast)
-        run: cargo binstall cargo-audit@0.22.0 --no-confirm
+      - name: Install cargo-audit
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version 0.22.1
+
+      - name: Cache advisory database
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/advisory-db
+          key: advisory-db-${{ github.run_id }}
+          restore-keys: |
+            advisory-db-
 
       - name: Run security audit
         id: audit
         run: |
-          if cargo audit --json > audit.json 2>&1; then
+          if cargo audit; then
             echo "audit_failed=false" >> $GITHUB_OUTPUT
           else
             echo "audit_failed=true" >> $GITHUB_OUTPUT
           fi
-          
-          # Always show the human-readable output
-          cargo audit || true
-          
+
       # Create a job summary that's visible in the Actions tab
       - name: Create job summary
         if: steps.audit.outputs.audit_failed == 'true'
@@ -63,7 +73,7 @@ jobs:
           echo "4. Review if these vulnerabilities affect your production deployments" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          
+
       # Fail the workflow if vulnerabilities were found
       - name: Check audit results
         if: steps.audit.outputs.audit_failed == 'true'
