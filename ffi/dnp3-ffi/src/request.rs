@@ -536,6 +536,8 @@ impl From<Variation> for ffi::Variation {
 
             Variation::Group110(_) => ffi::Variation::Group110,
             Variation::Group111(_) => ffi::Variation::Group111,
+            Variation::Group112(_) => ffi::Variation::Group110,
+            Variation::Group113(_) => ffi::Variation::Group111,
         }
     }
 }

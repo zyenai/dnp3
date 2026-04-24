@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use common::{
-    all_byte_values_max_vt, ascii_dump, compare_data, hex_dump, prng_data, size_boundary_patterns,
-    special_byte_patterns, TestPattern,
+    all_byte_values_max_vt, compare_data, hex_dump, prng_data, size_boundary_patterns,
+    special_byte_patterns,
 };
 
 const VT_MAX_SIZE: usize = 255;

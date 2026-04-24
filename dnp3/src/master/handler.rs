@@ -14,7 +14,6 @@ use crate::master::request::{CommandHeaders, CommandMode, ReadRequest, TimeSyncP
 use crate::master::tasks::command::CommandTask;
 use crate::master::tasks::deadbands::WriteDeadBandsTask;
 use crate::master::tasks::empty_response::EmptyResponseTask;
-use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::file::authenticate::AuthFileTask;
 use crate::master::tasks::file::close::CloseFileTask;
 use crate::master::tasks::file::directory::DirectoryReader;
@@ -25,6 +24,7 @@ use crate::master::tasks::file::write_block::{WriteBlockRequest, WriteBlockTask}
 use crate::master::tasks::read::SingleReadTask;
 use crate::master::tasks::restart::{RestartTask, RestartType};
 use crate::master::tasks::time::TimeSyncTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::Task;
 use crate::master::{
     AuthKey, BlockNumber, DeadBandHeader, DirReadConfig, FileCredentials, FileError, FileHandle,
