@@ -17,13 +17,13 @@ use crate::master::{ReadType, TaskType};
 
 use crate::master::tasks::deadbands::WriteDeadBandsTask;
 use crate::master::tasks::empty_response::EmptyResponseTask;
-use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::master::tasks::file::authenticate::AuthFileTask;
 use crate::master::tasks::file::close::CloseFileTask;
 use crate::master::tasks::file::get_info::GetFileInfoTask;
 use crate::master::tasks::file::open::OpenFileTask;
 use crate::master::tasks::file::read::FileReadTask;
 use crate::master::tasks::file::write_block::WriteBlockTask;
+use crate::master::tasks::virtual_terminal::WriteVirtualTerminalTask;
 use crate::transport::FragmentAddr;
 
 pub(crate) mod auto;
@@ -32,10 +32,10 @@ pub(crate) mod deadbands;
 pub(crate) mod empty_response;
 
 pub(crate) mod file;
-pub(crate) mod virtual_terminal;
 pub(crate) mod read;
 pub(crate) mod restart;
 pub(crate) mod time;
+pub(crate) mod virtual_terminal;
 
 /// Queued task requiring I/O
 pub(crate) struct AssociationTask {

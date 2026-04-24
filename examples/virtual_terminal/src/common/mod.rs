@@ -1,5 +1,7 @@
 //! Common utilities for Virtual Terminal examples
 
+#![allow(unused_imports)]
+
 pub mod terminal_interpreter;
 pub mod test_patterns;
 

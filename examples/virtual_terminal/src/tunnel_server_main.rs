@@ -16,10 +16,8 @@
 //! - T1071: Application Layer Protocol
 //! - T0869: Standard Application Layer Protocol (ICS)
 
-use std::time::Duration;
-
-use dnp3::app::measurement::OctetString;
 use dnp3::app::control::CommandStatus;
+use dnp3::app::measurement::OctetString;
 use dnp3::app::*;
 use dnp3::link::*;
 use dnp3::outstation::database::*;
@@ -106,7 +104,9 @@ fn parse_args() -> Args {
             }
             "-h" | "--help" => {
                 println!("DNP3-SSH Tunnel Server");
-                println!("  -d, --dnp3-listen <ADDR>  DNP3 listen address [default: 0.0.0.0:20000]");
+                println!(
+                    "  -d, --dnp3-listen <ADDR>  DNP3 listen address [default: 0.0.0.0:20000]"
+                );
                 println!("  -t, --target <ADDR>        Target endpoint [default: 127.0.0.1:22]");
                 println!("  --outstation-addr <N>      DNP3 outstation address [default: 10]");
                 println!("  --master-addr <N>          DNP3 master address [default: 1]");
@@ -153,16 +153,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create DNP3 TCP server
-    let mut server = Server::new_tcp_server(
-        LinkErrorMode::Close,
-        args.dnp3_listen.parse()?,
-    );
+    let mut server = Server::new_tcp_server(LinkErrorMode::Close, args.dnp3_listen.parse()?);
 
     let outstation = server.add_outstation(
         outstation_config,
-        Box::new(VtOutstationApp {
-            to_ssh_tx,
-        }),
+        Box::new(VtOutstationApp { to_ssh_tx }),
         Box::new(NullInfo),
         DefaultControlHandler::with_status(CommandStatus::NotSupported),
         NullListener::create(),
@@ -271,11 +266,7 @@ fn send_as_events(db: &OutstationHandle, data: &[u8]) {
         // update_static: false: don't change the static value (not needed for streaming)
         if let Ok(os) = OctetString::new(&chunk) {
             db.transaction(|db| {
-                db.update(
-                    VT_PORT,
-                    &os,
-                    UpdateOptions::new(false, EventMode::Force),
-                );
+                db.update(VT_PORT, &os, UpdateOptions::new(false, EventMode::Force));
             });
         }
     }

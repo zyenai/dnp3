@@ -126,7 +126,9 @@ fn parse_args() -> Args {
             }
             "-h" | "--help" => {
                 println!("DNP3-SSH Tunnel Client");
-                println!("  -l, --listen <ADDR>          TCP listen address [default: 127.0.0.1:2222]");
+                println!(
+                    "  -l, --listen <ADDR>          TCP listen address [default: 127.0.0.1:2222]"
+                );
                 println!("  -d, --dnp3-endpoint <ADDR>   DNP3 outstation endpoint [default: 127.0.0.1:20000]");
                 println!("  --master-addr <N>             DNP3 master address [default: 1]");
                 println!("  --outstation-addr <N>         DNP3 outstation address [default: 10]");
@@ -163,7 +165,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Outstation:   {}", args.outstation_addr);
     println!("  Poll:         {} ms", args.poll_interval_ms);
     println!();
-    println!("  Connect with: ssh -p {} localhost", args.listen.split(':').last().unwrap_or("2222"));
+    println!(
+        "  Connect with: ssh -p {} localhost",
+        args.listen.split(':').next_back().unwrap_or("2222")
+    );
     println!();
 
     // Shared channel sender for relaying outstation events to the active SSH session
@@ -211,7 +216,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enable the master channel
     channel.enable().await?;
 
-    println!("[Client] DNP3 master started, connecting to {}", args.dnp3_endpoint);
+    println!(
+        "[Client] DNP3 master started, connecting to {}",
+        args.dnp3_endpoint
+    );
 
     // Listen for SSH clients
     let listener = TcpListener::bind(&args.listen).await?;

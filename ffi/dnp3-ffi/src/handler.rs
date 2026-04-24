@@ -512,6 +512,7 @@ impl From<TaskType> for ffi::TaskType {
             TaskType::FileOpen => ffi::TaskType::FileOpen,
             TaskType::FileClose => ffi::TaskType::FileClose,
             TaskType::FileAuth => ffi::TaskType::FileAuth,
+            TaskType::WriteVirtualTerminal => ffi::TaskType::GenericEmptyResponse,
         }
     }
 }

@@ -2,6 +2,8 @@
 //!
 //! Provides various byte patterns to stress-test VT binary transparency.
 
+#![allow(dead_code)]
+
 use std::fmt;
 
 /// Test case with name and data

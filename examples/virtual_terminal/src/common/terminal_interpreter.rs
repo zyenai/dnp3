@@ -2,6 +2,8 @@
 //!
 //! Implements the behavior shown in IEEE 1815-2012 Section 5.2.3
 
+#![allow(dead_code)]
+
 use std::collections::VecDeque;
 
 /// Terminal interpreter state
