@@ -13,7 +13,9 @@ use crate::util::BadWrite;
 use super::list::VecList;
 use super::writer::EventWriter;
 
-use crate::outstation::database::details::event::traits::OctetStringLength;
+use crate::outstation::database::details::event::traits::{
+    OctetStringLength, VirtualTerminalLength, VtBytes,
+};
 use crate::outstation::{BufferState, ClassCount, OutstationApplication, TypeCount};
 use scursor::WriteCursor;
 
@@ -165,6 +167,7 @@ pub(crate) struct TypeCounter {
     num_analog: Count,
     num_analog_output_status: Count,
     num_octet_string: Count,
+    num_virtual_terminal: Count,
 }
 
 impl From<TypeCounter> for TypeCount {
@@ -193,6 +196,7 @@ impl TypeCounter {
             num_analog: Count::new(),
             num_analog_output_status: Count::new(),
             num_octet_string: Count::new(),
+            num_virtual_terminal: Count::new(),
         }
     }
 
@@ -205,6 +209,7 @@ impl TypeCounter {
         self.num_analog.zero();
         self.num_analog_output_status.zero();
         self.num_octet_string.zero();
+        self.num_virtual_terminal.zero();
     }
 
     fn increment(&mut self, event: &Event) {
@@ -230,6 +235,7 @@ impl TypeCounter {
             Event::Analog(_, _) => op(&mut self.num_analog),
             Event::AnalogOutputStatus(_, _) => op(&mut self.num_analog_output_status),
             Event::OctetString(_, _) => op(&mut self.num_octet_string),
+            Event::VirtualTerminal(_, _) => op(&mut self.num_virtual_terminal),
         }
     }
 }
@@ -278,6 +284,7 @@ impl Counters {
             Event::Analog(_, _) => self.types.num_analog.decrement(),
             Event::AnalogOutputStatus(_, _) => self.types.num_analog_output_status.decrement(),
             Event::OctetString(_, _) => self.types.num_octet_string.decrement(),
+            Event::VirtualTerminal(_, _) => self.types.num_virtual_terminal.decrement(),
         }
     }
 }
@@ -335,6 +342,7 @@ pub(crate) enum Event {
         Variation<EventAnalogOutputStatusVariation>,
     ),
     OctetString(Box<[u8]>, Variation<EventOctetStringVariation>),
+    VirtualTerminal(VtBytes, Variation<EventVirtualTerminalVariation>),
 }
 
 impl Event {
@@ -348,6 +356,7 @@ impl Event {
             Event::Analog(_, v) => v.select_default(),
             Event::AnalogOutputStatus(_, v) => v.select_default(),
             Event::OctetString(_, v) => v.select_default(),
+            Event::VirtualTerminal(_, v) => v.select_default(),
         }
     }
 
@@ -367,6 +376,9 @@ impl Event {
             Event::AnalogOutputStatus(evt, v) => writer.write(cursor, evt, index, v.selected.get()),
             Event::OctetString(evt, _) => {
                 writer.write(cursor, evt, index, OctetStringLength(evt.len()))
+            }
+            Event::VirtualTerminal(evt, _) => {
+                writer.write(cursor, evt, index, VirtualTerminalLength(evt.0.len()))
             }
         }
     }
@@ -529,6 +541,9 @@ impl EventBuffer {
             EventReadHeader::OctetString(limit) => {
                 self.select_by_type::<measurement::OctetString>(None, limit)
             }
+            EventReadHeader::VirtualTerminal(limit) => {
+                self.select_by_type::<measurement::VirtualTerminal>(None, limit)
+            }
             EventReadHeader::FrozenAnalog(_, _) => {
                 // not currently supported
                 0
@@ -657,6 +672,7 @@ impl EventBuffer {
             || self.is_full::<measurement::AnalogInput>()
             || self.is_full::<measurement::AnalogOutputStatus>()
             || self.is_full::<measurement::OctetString>()
+            || self.is_full::<measurement::VirtualTerminal>()
     }
 
     fn is_full<T>(&self) -> bool
@@ -996,6 +1012,43 @@ impl Insertable for measurement::OctetString {
     }
 }
 
+impl Insertable for measurement::VirtualTerminal {
+    type EventVariation = EventVirtualTerminalVariation;
+
+    fn get_max(config: &EventBufferConfig) -> u16 {
+        config.max_virtual_terminal
+    }
+
+    fn get_type_count(counter: &TypeCounter) -> usize {
+        counter.num_virtual_terminal.get()
+    }
+
+    fn is_type(record: &EventRecord) -> bool {
+        std::matches!(record.event, Event::VirtualTerminal(_, _))
+    }
+
+    fn decrement_type(counter: &mut TypeCounter) {
+        counter.num_virtual_terminal.decrement();
+    }
+
+    fn increment_type(counter: &mut TypeCounter) {
+        counter.num_virtual_terminal.increment();
+    }
+
+    fn create_event(&self, default_variation: EventVirtualTerminalVariation) -> Event {
+        Event::VirtualTerminal(VtBytes(self.as_boxed_slice()), Variation::new(default_variation))
+    }
+
+    fn select_variation(record: &EventRecord, variation: Self::EventVariation) -> bool {
+        if let Event::VirtualTerminal(_, v) = &record.event {
+            v.selected.set(variation);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::app::measurement::*;
@@ -1197,5 +1250,35 @@ mod tests {
         assert_eq!(mock.events.pop_front(), Some(Event::Clear(0)));
         assert_eq!(mock.events.pop_front(), Some(Event::Clear(3)));
         assert_eq!(mock.events.pop_front(), None);
+    }
+
+    #[test]
+    fn writes_virtual_terminal_event_as_g113() {
+        let mut buffer = EventBuffer::new(EventBufferConfig::all_types(3));
+
+        // "OK\r" published at virtual terminal port (index) 7, class 1
+        buffer
+            .insert(
+                7,
+                EventClass::Class1,
+                &VirtualTerminal::new(b"OK\r").unwrap(),
+                EventVirtualTerminalVariation,
+            )
+            .unwrap();
+
+        assert_eq!(1, buffer.select_by_class(EventClass::Class1.into(), None));
+
+        let mut backing = [0u8; 32];
+        let mut cursor = WriteCursor::new(backing.as_mut());
+        assert_eq!(1, buffer.write_events(&mut cursor).unwrap());
+
+        assert_eq!(
+            cursor.written(),
+            [
+                // group 113, variation == length (3), CountAndPrefix16 qualifier, count == 1,
+                // 16-bit index prefix (7), then the data bytes "OK\r"
+                113, 3, 0x28, 0x01, 0x00, 0x07, 0x00, b'O', b'K', b'\r'
+            ]
+        );
     }
 }

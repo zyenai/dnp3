@@ -2,8 +2,8 @@
 //!
 //! Runs on the outstation/IED side. Listens for DNP3 connections on port 20000,
 //! receives data via G112 (VT Output) writes from the master, and forwards it to
-//! a local SSH daemon. Responses from the SSH daemon are returned as G111 (OctetString)
-//! events that the master polls.
+//! a local SSH daemon. Responses from the SSH daemon are returned as G113 (Virtual
+//! Terminal Event Data) events that the master polls.
 //!
 //! ## Usage
 //!
@@ -17,7 +17,7 @@
 //! - T0869: Standard Application Layer Protocol (ICS)
 
 use dnp3::app::control::CommandStatus;
-use dnp3::app::measurement::OctetString;
+use dnp3::app::measurement::VirtualTerminal;
 use dnp3::app::*;
 use dnp3::link::*;
 use dnp3::outstation::database::*;
@@ -28,7 +28,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
-/// Maximum bytes per OctetString event chunk (G111 max variation = 255, we stay well under)
+/// Maximum bytes per G113 event chunk (variation = length, max 255; we stay well under)
 const CHUNK_SIZE: usize = 240;
 /// VT port index used for the tunnel
 const VT_PORT: u16 = 0;
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let outstation_config = OutstationConfig::new(
         EndpointAddress::try_new(args.outstation_addr)?,
         EndpointAddress::try_new(args.master_addr)?,
-        EventBufferConfig::new(0, 0, 0, 0, 0, 0, 0, 64), // 64 octet-string events
+        EventBufferConfig::new(0, 0, 0, 0, 0, 0, 0, 0, 64), // 64 virtual terminal (g113) events
     );
 
     // Create DNP3 TCP server
@@ -164,9 +164,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AddressFilter::Any,
     )?;
 
-    // Add OctetString point at index VT_PORT for carrying SSH→master data
+    // Register a virtual terminal port at index VT_PORT for carrying SSH→master data as G113 events
     outstation.transaction(|db| {
-        db.add(VT_PORT, Some(EventClass::Class1), OctetStringConfig);
+        db.add(VT_PORT, Some(EventClass::Class1), VirtualTerminalConfig);
     });
 
     // Bind the server - keep the handle alive or the server shuts down
@@ -190,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // ─── SSH Bridge ──────────────────────────────────────────────────────────────
 
 /// Bridges G112 writes (from master) to an SSH daemon, and sends SSH responses
-/// back as G111 (OctetString) events that the master polls.
+/// back as G113 (Virtual Terminal Event Data) events that the master polls.
 async fn run_ssh_bridge(
     mut from_master_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     db: OutstationHandle,
@@ -230,7 +230,7 @@ async fn run_ssh_bridge(
                 }
             }
 
-            // Data from SSH server → send as G111 events to master
+            // Data from SSH server → send as G113 events to master
             result = async {
                 match &mut ssh_stream {
                     Some(s) => s.read(&mut read_buf).await,
@@ -244,7 +244,7 @@ async fn run_ssh_bridge(
                     }
                     Ok(n) => {
                         let data = read_buf[..n].to_vec();
-                        println!("[Bridge] SSH → Master: {} bytes", data.len());
+                        println!("[Bridge] SSH → Master: {} bytes (g113)", data.len());
                         send_as_events(&db, &data);
                     }
                     Err(e) => {
@@ -257,16 +257,15 @@ async fn run_ssh_bridge(
     }
 }
 
-/// Chunk `data` into CHUNK_SIZE pieces and store each as an OctetString event
-/// at point index VT_PORT with EventMode::Force so a new event is always generated.
+/// Chunk `data` into CHUNK_SIZE pieces and publish each as a G113 (Virtual Terminal Event Data)
+/// event at point index VT_PORT with EventMode::Force so a new event is always generated.
 fn send_as_events(db: &OutstationHandle, data: &[u8]) {
     for chunk in data.chunks(CHUNK_SIZE) {
-        let chunk = chunk.to_vec();
-        // EventMode::Force: always generate event even if value unchanged
-        // update_static: false: don't change the static value (not needed for streaming)
-        if let Ok(os) = OctetString::new(&chunk) {
+        // EventMode::Force: always generate an event even when the bytes repeat (essential for a
+        // stream). update_static is unused for virtual terminals, which are event-only.
+        if let Ok(vt) = VirtualTerminal::new(chunk) {
             db.transaction(|db| {
-                db.update(VT_PORT, &os, UpdateOptions::new(false, EventMode::Force));
+                db.update(VT_PORT, &vt, UpdateOptions::new(false, EventMode::Force));
             });
         }
     }

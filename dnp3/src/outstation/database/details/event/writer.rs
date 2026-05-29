@@ -4,7 +4,9 @@ use crate::app::variations::{Group51Var1, Group51Var2};
 use crate::app::QualifierCode;
 use crate::app::Timestamp;
 use crate::outstation::database::config::*;
-use crate::outstation::database::details::event::traits::{EventVariation, OctetStringLength};
+use crate::outstation::database::details::event::traits::{
+    EventVariation, OctetStringLength, VirtualTerminalLength, VtBytes,
+};
 use crate::outstation::database::details::event::write_fn::Continue;
 
 use crate::util::BadWrite;
@@ -47,6 +49,7 @@ pub(crate) enum HeaderType {
     Analog(EventAnalogInputVariation),
     AnalogOutputStatus(EventAnalogOutputStatusVariation),
     OctetString(OctetStringLength),
+    VirtualTerminal(VirtualTerminalLength),
 }
 
 #[derive(Copy, Clone)]
@@ -330,6 +333,21 @@ impl Writable for Box<[u8]> {
     fn get_header_variation(&self, header: &HeaderType) -> Option<Self::EventVariation> {
         match header {
             HeaderType::OctetString(var) => Some(*var),
+            _ => None,
+        }
+    }
+
+    fn get_time(&self) -> Option<Time> {
+        None
+    }
+}
+
+impl Writable for VtBytes {
+    type EventVariation = VirtualTerminalLength;
+
+    fn get_header_variation(&self, header: &HeaderType) -> Option<Self::EventVariation> {
+        match header {
+            HeaderType::VirtualTerminal(var) => Some(*var),
             _ => None,
         }
     }

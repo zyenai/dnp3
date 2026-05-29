@@ -6,21 +6,31 @@ use crate::outstation::database::details::range::static_db::{
 };
 use crate::outstation::database::read::ReadHeader;
 use crate::outstation::database::{
-    ClassZeroConfig, EventBufferConfig, ResponseInfo, UpdateFlagsType, UpdateInfo, UpdateOptions,
+    ClassZeroConfig, EventBufferConfig, EventMode, ResponseInfo, UpdateFlagsType, UpdateInfo,
+    UpdateOptions,
 };
 
 use crate::app::measurement::{
     AnalogInput, AnalogOutputStatus, BinaryInput, BinaryOutputStatus, Counter,
-    DoubleBitBinaryInput, Flags, FrozenCounter, Time,
+    DoubleBitBinaryInput, Flags, FrozenCounter, Time, VirtualTerminal,
 };
+use crate::outstation::database::config::EventVirtualTerminalVariation;
 use crate::outstation::database::details::attrs::map::SetMap;
+use crate::outstation::database::EventClass;
 use crate::outstation::{BufferState, OutstationApplication};
 use scursor::WriteCursor;
+
+use std::collections::BTreeMap;
 
 pub(crate) struct Database {
     static_db: StaticDatabase,
     event_buffer: EventBuffer,
     attrs: super::attrs::AttrHandler,
+    /// registered virtual terminal ports (g112/g113); maps port index -> event class.
+    ///
+    /// Virtual terminal data is event-only, so it does not live in the static database. The
+    /// registry exists only to remember which event class a port's g113 events belong to.
+    virtual_terminals: BTreeMap<u16, EventClass>,
 }
 
 impl Database {
@@ -33,6 +43,7 @@ impl Database {
             static_db: StaticDatabase::new(max_read_selection, class_zero_config),
             event_buffer: EventBuffer::new(config),
             attrs: super::attrs::AttrHandler::new(32),
+            virtual_terminals: BTreeMap::new(),
         }
     }
 
@@ -173,6 +184,53 @@ impl Database {
             UpdateInfo::NoEvent
         } else {
             UpdateInfo::NoPoint
+        }
+    }
+
+    /// Register a virtual terminal port. Returns false if a port with this index already exists.
+    pub(crate) fn add_virtual_terminal(&mut self, port: u16, class: EventClass) -> bool {
+        if self.virtual_terminals.contains_key(&port) {
+            return false;
+        }
+        self.virtual_terminals.insert(port, class);
+        true
+    }
+
+    /// Remove a virtual terminal port. Returns true if the port existed.
+    ///
+    /// Any g113 events already buffered for the port are still reported normally.
+    pub(crate) fn remove_virtual_terminal(&mut self, port: u16) -> bool {
+        self.virtual_terminals.remove(&port).is_some()
+    }
+
+    /// Publish a Group 113 virtual terminal event for a registered port.
+    ///
+    /// Virtual terminal data is event-only (no static value is stored), so there is nothing to
+    /// compare against: `EventMode::Detect` and `EventMode::Force` both emit an event, while
+    /// `EventMode::Suppress` emits none.
+    pub(crate) fn update_virtual_terminal(
+        &mut self,
+        port: u16,
+        value: &VirtualTerminal,
+        options: UpdateOptions,
+    ) -> UpdateInfo {
+        let Some(&class) = self.virtual_terminals.get(&port) else {
+            return UpdateInfo::NoPoint;
+        };
+
+        if options.event_mode == EventMode::Suppress {
+            return UpdateInfo::NoEvent;
+        }
+
+        match self
+            .event_buffer
+            .insert(port, class, value, EventVirtualTerminalVariation)
+        {
+            Ok(x) => UpdateInfo::Created(x),
+            Err(InsertError::TypeMaxIsZero) => UpdateInfo::NoEvent,
+            Err(InsertError::Overflow { created, discarded }) => {
+                UpdateInfo::Overflow { created, discarded }
+            }
         }
     }
 

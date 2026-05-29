@@ -145,12 +145,15 @@ pub struct EventBufferConfig {
     /// maximum number of octet string events (g111)
     #[cfg_attr(feature = "serialization", serde(default))]
     pub max_octet_string: u16,
+    /// maximum number of virtual terminal events (g113)
+    #[cfg_attr(feature = "serialization", serde(default))]
+    pub max_virtual_terminal: u16,
 }
 
 impl EventBufferConfig {
     /// initialize with the same maximum values for all types
     pub fn all_types(max: u16) -> Self {
-        Self::new(max, max, max, max, max, max, max, max)
+        Self::new(max, max, max, max, max, max, max, max, max)
     }
 
     /// initialize the configuration to support no events
@@ -169,6 +172,7 @@ impl EventBufferConfig {
         max_analog: u16,
         max_analog_output_status: u16,
         max_octet_string: u16,
+        max_virtual_terminal: u16,
     ) -> Self {
         Self {
             max_binary,
@@ -179,6 +183,7 @@ impl EventBufferConfig {
             max_analog,
             max_analog_output_status,
             max_octet_string,
+            max_virtual_terminal,
         }
     }
 
@@ -191,6 +196,7 @@ impl EventBufferConfig {
             + self.max_analog as usize
             + self.max_analog_output_status as usize
             + self.max_octet_string as usize
+            + self.max_virtual_terminal as usize
     }
 }
 
@@ -589,6 +595,17 @@ impl Update<OctetString> for Database {
     }
 }
 
+impl Update<VirtualTerminal> for Database {
+    fn update2(
+        &mut self,
+        index: u16,
+        value: &VirtualTerminal,
+        options: UpdateOptions,
+    ) -> UpdateInfo {
+        self.inner.update_virtual_terminal(index, value, options)
+    }
+}
+
 impl Add<BinaryInputConfig> for Database {
     fn add(&mut self, index: u16, class: Option<EventClass>, config: BinaryInputConfig) -> bool {
         let config =
@@ -696,6 +713,24 @@ impl Add<OctetStringConfig> for Database {
     }
 }
 
+impl Add<VirtualTerminalConfig> for Database {
+    /// Register a virtual terminal port (Group 112/113).
+    ///
+    /// Virtual terminal data is event-only, so `class` must be `Some(..)`; passing `None` is
+    /// rejected (returns false) because an event-only point with no event class is meaningless.
+    fn add(&mut self, index: u16, class: Option<EventClass>, _config: VirtualTerminalConfig) -> bool {
+        match class {
+            Some(class) => self.inner.add_virtual_terminal(index, class),
+            None => {
+                tracing::warn!(
+                    "virtual terminal port {index} not added: an event class is required (got None)"
+                );
+                false
+            }
+        }
+    }
+}
+
 impl Remove<BinaryInput> for Database {
     fn remove(&mut self, index: u16) -> bool {
         self.inner.remove::<BinaryInput>(index)
@@ -741,6 +776,12 @@ impl Remove<AnalogOutputStatus> for Database {
 impl Remove<OctetString> for Database {
     fn remove(&mut self, index: u16) -> bool {
         self.inner.remove::<OctetString>(index)
+    }
+}
+
+impl Remove<VirtualTerminal> for Database {
+    fn remove(&mut self, index: u16) -> bool {
+        self.inner.remove_virtual_terminal(index)
     }
 }
 

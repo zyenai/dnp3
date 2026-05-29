@@ -158,6 +158,14 @@ pub enum EventAnalogOutputStatusVariation {
 )]
 pub(crate) struct EventOctetStringVariation;
 
+// This is always g113vX
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub(crate) struct EventVirtualTerminalVariation;
+
 /// Enum representing all possible `BinaryInput` static variations
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -428,6 +436,16 @@ pub struct AnalogOutputStatusConfig {
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct OctetStringConfig;
+
+/// Virtual terminal data doesn't need any configuration b/c the transmitted variation is
+/// determined by the size. This struct is a placeholder mirroring [`OctetStringConfig`] so that
+/// virtual terminal points can be registered through the same `Add` API.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub struct VirtualTerminalConfig;
 
 impl BinaryInputConfig {
     /// construct a `BinaryConfig` from its fields

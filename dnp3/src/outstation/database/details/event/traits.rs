@@ -13,6 +13,17 @@ use super::write_fn::write_octet_string;
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) struct OctetStringLength(pub(crate) usize);
 
+/// Length of a Group 113 virtual terminal event; the variation equals the length.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(crate) struct VirtualTerminalLength(pub(crate) usize);
+
+/// Owned payload for a buffered Group 113 virtual terminal event.
+///
+/// A distinct newtype (rather than reusing `Box<[u8]>` as octet strings do) so that it can carry
+/// its own [`Writable`](super::writer::Writable)/[`EventVariation`] impls that emit group 113.
+#[derive(Debug, PartialEq)]
+pub(crate) struct VtBytes(pub(crate) Box<[u8]>);
+
 pub(crate) trait EventVariation<T> {
     fn write(
         &self,
@@ -333,5 +344,26 @@ impl EventVariation<Box<[u8]>> for OctetStringLength {
 
     fn get_group_var(&self, event: &Box<[u8]>) -> (u8, u8) {
         (111, event.len() as u8)
+    }
+}
+
+impl EventVariation<VtBytes> for VirtualTerminalLength {
+    fn write(
+        &self,
+        cursor: &mut WriteCursor,
+        event: &VtBytes,
+        index: u16,
+        _cto: Time,
+    ) -> Result<Continue, WriteError> {
+        // identical wire layout to an octet string event, only the group differs
+        write_octet_string(cursor, &event.0, index)
+    }
+
+    fn wrap(&self) -> HeaderType {
+        HeaderType::VirtualTerminal(*self)
+    }
+
+    fn get_group_var(&self, event: &VtBytes) -> (u8, u8) {
+        (113, event.0.len() as u8)
     }
 }

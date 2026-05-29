@@ -861,6 +861,66 @@ pub enum OctetStringLengthError {
     MoreThan255Octets,
 }
 
+/// Virtual Terminal Event Data (Group 113).
+///
+/// Carries an opaque stream of bytes flowing *from* an outstation to a master, as defined in
+/// IEEE 1815-2012. The point index identifies the virtual terminal port. The transmitted
+/// variation is determined by the data length, so a value may hold from 1 to 255 octets. Unlike
+/// octet strings, virtual terminal data is event-only: it is reported via Group 113 events and
+/// has no static (Class-0) representation.
+#[allow(missing_copy_implementations)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct VirtualTerminal {
+    value: [u8; Self::MAX_SIZE],
+    len: u8,
+}
+
+#[allow(clippy::len_without_is_empty)]
+impl VirtualTerminal {
+    const MAX_SIZE: usize = 255;
+
+    /// Creates a new virtual terminal value.
+    ///
+    /// The `value` parameter must have a length <= 255 bytes.
+    pub fn new(value: &[u8]) -> Result<Self, VirtualTerminalLengthError> {
+        let len = value.len();
+
+        if len > Self::MAX_SIZE {
+            return Err(VirtualTerminalLengthError::MoreThan255Octets);
+        }
+
+        let mut result = Self {
+            value: [0u8; Self::MAX_SIZE],
+            len: len as u8,
+        };
+        result.value[..len].copy_from_slice(value);
+        Ok(result)
+    }
+
+    /// Returns the value of the virtual terminal data
+    pub fn value(&self) -> &[u8] {
+        &self.value[..self.len() as usize]
+    }
+
+    /// Returns the length of the virtual terminal data
+    pub fn len(&self) -> u8 {
+        self.len
+    }
+
+    /// Allocates a new slice with the exact size of the data
+    /// and copies the content to it.
+    pub(crate) fn as_boxed_slice(&self) -> Box<[u8]> {
+        self.value().into()
+    }
+}
+
+/// Errors when creating virtual terminal data
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum VirtualTerminalLengthError {
+    /// Virtual terminal data can only hold up to 255 octets.
+    MoreThan255Octets,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

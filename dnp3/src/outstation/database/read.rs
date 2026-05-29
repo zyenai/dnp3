@@ -47,6 +47,7 @@ pub(crate) enum EventReadHeader {
     FrozenAnalog(Option<EventFrozenAnalogInputVariation>, Option<usize>),
     AnalogOutputStatus(Option<EventAnalogOutputStatusVariation>, Option<usize>),
     OctetString(Option<usize>),
+    VirtualTerminal(Option<usize>),
 }
 
 #[derive(Copy, Clone)]
@@ -639,10 +640,10 @@ impl ReadHeader {
             AllObjectsVariation::Group110Var0 => Some(StaticReadHeader::OctetString(None).into()),
             // group 111
             AllObjectsVariation::Group111Var0 => Some(EventReadHeader::OctetString(None).into()),
-            // group 112 - Virtual Terminal Output Block (not stored in database)
+            // group 112 - Virtual Terminal Output Block (inbound WRITE only, never read)
             AllObjectsVariation::Group112Var0 => None,
-            // group 113 - Virtual Terminal Event Data (not stored in database)
-            AllObjectsVariation::Group113Var0 => None,
+            // group 113 - Virtual Terminal Event Data
+            AllObjectsVariation::Group113Var0 => Some(EventReadHeader::VirtualTerminal(None).into()),
         }
     }
 
@@ -924,8 +925,10 @@ impl ReadHeader {
             CountVariation::Group60Var4 => Some(EventReadHeader::Class3(Some(count)).into()),
             CountVariation::Group111Var0 => Some(EventReadHeader::OctetString(Some(count)).into()),
             CountVariation::Group111VarX(_) => None,
-            // group 113 - Virtual Terminal Event Data (not stored in database)
-            CountVariation::Group113Var0 => None,
+            // group 113 - Virtual Terminal Event Data
+            CountVariation::Group113Var0 => {
+                Some(EventReadHeader::VirtualTerminal(Some(count)).into())
+            }
             CountVariation::Group113VarX(_) => None,
         }
     }
