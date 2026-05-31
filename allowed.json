@@ -1490,6 +1490,21 @@
         }
       ]
     },
+    "signal-hook-registry": {
+      "id": "signal-hook-registry",
+      "source": "crates.io",
+      "licenses": [
+        {
+          "MIT": {
+            "copyright": {
+              "Lines": [
+                "Copyright (c) 2017 tokio-jsonrpc developers"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "slab": {
       "id": "slab",
       "source": "crates.io",
