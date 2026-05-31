@@ -643,7 +643,9 @@ impl ReadHeader {
             // group 112 - Virtual Terminal Output Block (inbound WRITE only, never read)
             AllObjectsVariation::Group112Var0 => None,
             // group 113 - Virtual Terminal Event Data
-            AllObjectsVariation::Group113Var0 => Some(EventReadHeader::VirtualTerminal(None).into()),
+            AllObjectsVariation::Group113Var0 => {
+                Some(EventReadHeader::VirtualTerminal(None).into())
+            }
         }
     }
 
