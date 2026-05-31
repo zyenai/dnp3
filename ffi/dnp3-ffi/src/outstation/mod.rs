@@ -722,6 +722,9 @@ impl From<&ffi::EventBufferConfig> for EventBufferConfig {
             max_analog: from.max_analog(),
             max_analog_output_status: from.max_analog_output_status(),
             max_octet_string: from.max_octet_string(),
+            // G113 virtual terminal events are not yet exposed in the FFI schema; reuse the
+            // octet-string budget so the field is populated without a schema change.
+            max_virtual_terminal: from.max_octet_string(),
         }
     }
 }

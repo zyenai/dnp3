@@ -2,7 +2,7 @@
 //!
 //! Runs on the master/SCADA side. Listens on port 2222 for SSH clients, forwards
 //! data via G112 (VT Output) WRITE requests to the outstation, and relays the
-//! outstation's G111 (OctetString) events back to the SSH client.
+//! outstation's G113 (Virtual Terminal Event Data) events back to the SSH client.
 //!
 //! ## Usage
 //!
@@ -35,7 +35,7 @@ const VT_PORT: u8 = 0;
 /// Maximum bytes per G112 write (variation = data length, max 255)
 const CHUNK_SIZE: usize = 240;
 
-// ─── Read handler: receives G111 OctetString events from outstation ──────────
+// ─── Read handler: receives G113 Virtual Terminal events from outstation ─────
 
 /// Shared sender updated per SSH session. The ReadHandler is created once
 /// but sessions come and go; we swap the sender as needed.
@@ -55,8 +55,8 @@ impl VtReadHandler {
 }
 
 impl ReadHandler for VtReadHandler {
-    /// G111 OctetString events carry SSH server data from the outstation.
-    fn handle_octet_string<'a>(
+    /// G113 Virtual Terminal Event Data carries SSH server data from the outstation.
+    fn handle_virtual_terminal_event<'a>(
         &mut self,
         _info: HeaderInfo,
         iter: &'a mut dyn Iterator<Item = (&'a [u8], u16)>,
@@ -205,7 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-    // Poll for class 1/2/3 events (OctetString events are class 1)
+    // Poll for class 1/2/3 events (G113 virtual terminal events are class 1)
     association
         .add_poll(
             ReadRequest::ClassScan(Classes::class123()),
@@ -290,7 +290,7 @@ async fn handle_ssh_session(
                 }
             }
 
-            // Outstation G111 event → SSH client
+            // Outstation G113 virtual terminal event → SSH client
             msg = from_outstation_rx.recv() => {
                 match msg {
                     Some(data) => {

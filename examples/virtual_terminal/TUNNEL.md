@@ -12,7 +12,7 @@ DNP3 Virtual Terminal objects (G112/G113) over an actual TCP connection.
 │   ssh -p 2222 host                                                   │
 │        │                                                             │
 │   TcpListener :2222  ──►  DNP3 Master  ──► G112 WRITE ──► port 20000│
-│                      ◄──  ReadHandler  ◄── G111 EVENT ◄─────────────│
+│                      ◄──  ReadHandler  ◄── G113 EVENT ◄─────────────│
 └──────────────────────────────────────────────────────────────────────┘
                               DNP3/TCP  port 20000
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -21,14 +21,19 @@ DNP3 Virtual Terminal objects (G112/G113) over an actual TCP connection.
 │   port 20000 ──► DNP3 Outstation ──► handle_virtual_terminal_write  │
 │                                               │                      │
 │                                         TcpStream :22  ──► sshd     │
-│              G111 OctetString events ◄── mpsc channel ◄── sshd      │
+│              G113 VirtualTerminal events ◄── mpsc channel ◄── sshd  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 **Data paths:**
 - Master → Outstation: SSH client bytes sent as **G112 WRITE** requests
-- Outstation → Master: SSH server bytes returned as **G111 OctetString events**
-  polled by the master on a configurable interval
+- Outstation → Master: SSH server bytes returned as **G113 Virtual Terminal Event Data**
+  events, polled by the master on a configurable interval
+
+This is the protocol-correct mapping per IEEE 1815-2012: G112 (Virtual Terminal Output
+Block) carries data *to* the outstation, and G113 (Virtual Terminal Event Data) carries data
+*from* it. SSH and Telnet are both opaque interactive byte streams, so the same tunnel
+transports either.
 
 ## Quick Start
 
@@ -96,8 +101,8 @@ OPTIONS:
     --outstation-addr <N>       DNP3 link-layer address of the outstation
                                 [default: 10]
 
-    --poll-interval <MS>        How often to poll the outstation for G111
-                                OctetString events (lower = less latency)
+    --poll-interval <MS>        How often to poll the outstation for G113
+                                Virtual Terminal events (lower = less latency)
                                 [default: 100]
 
     -h, --help                  Print help
@@ -165,23 +170,36 @@ The outstation's session layer dispatches each `(data, port_index)` pair to
 `OutstationApplication::handle_virtual_terminal_write()`. The tunnel
 implementation forwards that data to the SSH server over a plain TCP stream.
 
-### G111 OctetString Events (outstation → master)
+### G113 Virtual Terminal Events (outstation → master)
 
-When the SSH server responds, the outstation bridge calls:
+The outstation registers a virtual terminal port once at startup:
 
 ```rust
-db.update(VT_PORT, &OctetString::new(&chunk)?, UpdateOptions::new(false, EventMode::Force));
+db.add(VT_PORT, Some(EventClass::Class1), VirtualTerminalConfig);
+```
+
+When the SSH server responds, the outstation bridge publishes each chunk as a G113 event:
+
+```rust
+db.update(VT_PORT, &VirtualTerminal::new(chunk)?, UpdateOptions::new(false, EventMode::Force));
 ```
 
 `EventMode::Force` ensures an event is always generated even if the byte
-content is identical to the previous chunk. The master polls class-1 events
-every `--poll-interval` ms and receives these as G111 objects, which the
-`VtReadHandler` forwards to the waiting SSH client socket.
+content is identical to the previous chunk (essential for a stream). The master polls
+class-1 events every `--poll-interval` ms and receives these as G113 objects, which the
+parser dispatches to `ReadHandler::handle_virtual_terminal_event`, and the `VtReadHandler`
+forwards to the waiting SSH client socket.
+
+Virtual terminal data is event-only: unlike octet strings it has no static (Class-0)
+representation, so `update_static` is ignored and there is no `Get` for it.
 
 ## Library Changes and Backward Compatibility
 
-These changes were made to the `dnp3` crate to support real G112 writes.
-All changes are purely additive — existing applications are unaffected.
+These changes were made to the `dnp3` crate to support real G112 writes (inbound) and G113
+events (outbound). Nearly all are additive; the one source-compatibility note is that
+`EventBufferConfig::new` gained a parameter.
+
+**G112 inbound writes (master → outstation):**
 
 | Change | File | Impact on existing code |
 |--------|------|------------------------|
@@ -192,6 +210,18 @@ All changes are purely additive — existing applications are unaffected.
 | `AssociationHandle::write_virtual_terminal()` new method | `master/handler.rs` | Additive — new method only |
 | `OutstationApplication::handle_virtual_terminal_write()` new trait method | `outstation/traits.rs` | Default impl returns `Ok(())` — existing impls inherit automatically |
 | G112 handling in session write handler | `outstation/session.rs` | Previously returned `NO_FUNC_CODE_SUPPORT`; now calls callback which defaults to `Ok(())` — no change for apps that never receive G112 |
+
+**G113 outbound events (outstation → master):**
+
+| Change | File | Impact on existing code |
+|--------|------|------------------------|
+| `VirtualTerminal` measurement type | `app/measurement.rs` | Additive — new public type |
+| `VirtualTerminalConfig` + `EventVirtualTerminalVariation` | `outstation/database/config.rs` | Additive — new types |
+| `Event::VirtualTerminal` + `Insertable`/`Writable` impls (group 113) | `outstation/database/details/event/*` | Additive — mirrors the octet-string event path |
+| `max_virtual_terminal` field on `EventBufferConfig`; `new()` gains a 9th parameter | `outstation/database/mod.rs` | **Source-breaking** for callers of `EventBufferConfig::new` (add one arg); `all_types()` and serde `..Default` are unaffected |
+| `Add<VirtualTerminalConfig>` / `Update<VirtualTerminal>` / `Remove<VirtualTerminal>` on `Database` | `outstation/database/mod.rs` | Additive — event-only, no static read-back, no `Get` |
+| G113 dispatch in READ headers | `outstation/database/read.rs` | Additive — previously returned `None` |
+| `ReadHandler::handle_virtual_terminal_event()` | (already present) | Master-side receive was already complete |
 
 ## MITRE ATT&CK References
 
