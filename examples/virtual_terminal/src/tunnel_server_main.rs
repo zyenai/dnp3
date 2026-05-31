@@ -222,7 +222,7 @@ async fn run_ssh_bridge(
                 }
 
                 if let Some(ref mut stream) = ssh_stream {
-                    println!("[Bridge] Master → SSH: {} bytes", data.len());
+                    println!("[Bridge] Master → SSH: {} bytes (g112)", data.len());
                     if let Err(e) = stream.write_all(&data).await {
                         eprintln!("[Bridge] SSH write error: {}", e);
                         ssh_stream = None;
