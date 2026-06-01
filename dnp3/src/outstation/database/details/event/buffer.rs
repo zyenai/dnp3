@@ -1036,7 +1036,10 @@ impl Insertable for measurement::VirtualTerminal {
     }
 
     fn create_event(&self, default_variation: EventVirtualTerminalVariation) -> Event {
-        Event::VirtualTerminal(VtBytes(self.as_boxed_slice()), Variation::new(default_variation))
+        Event::VirtualTerminal(
+            VtBytes(self.as_boxed_slice()),
+            Variation::new(default_variation),
+        )
     }
 
     fn select_variation(record: &EventRecord, variation: Self::EventVariation) -> bool {

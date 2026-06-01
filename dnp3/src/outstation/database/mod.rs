@@ -718,7 +718,12 @@ impl Add<VirtualTerminalConfig> for Database {
     ///
     /// Virtual terminal data is event-only, so `class` must be `Some(..)`; passing `None` is
     /// rejected (returns false) because an event-only point with no event class is meaningless.
-    fn add(&mut self, index: u16, class: Option<EventClass>, _config: VirtualTerminalConfig) -> bool {
+    fn add(
+        &mut self,
+        index: u16,
+        class: Option<EventClass>,
+        _config: VirtualTerminalConfig,
+    ) -> bool {
         match class {
             Some(class) => self.inner.add_virtual_terminal(index, class),
             None => {

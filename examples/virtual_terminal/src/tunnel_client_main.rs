@@ -271,7 +271,7 @@ async fn handle_ssh_session(
                     }
                     Ok(n) => {
                         let data = buf[..n].to_vec();
-                        println!("[Client] SSH client → DNP3: {} bytes", data.len());
+                        println!("[Client] SSH client → DNP3: {} bytes (g112)", data.len());
 
                         // Chunk and write each piece as a G112 WRITE
                         for chunk in data.chunks(CHUNK_SIZE) {
@@ -294,7 +294,7 @@ async fn handle_ssh_session(
             msg = from_outstation_rx.recv() => {
                 match msg {
                     Some(data) => {
-                        println!("[Client] DNP3 → SSH client: {} bytes", data.len());
+                        println!("[Client] DNP3 → SSH client: {} bytes (g113)", data.len());
                         if let Err(e) = tcp_tx.write_all(&data).await {
                             eprintln!("[Client] SSH write error: {}", e);
                             break;
